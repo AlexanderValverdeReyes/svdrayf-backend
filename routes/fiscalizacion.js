@@ -38,6 +38,49 @@ router.post('/inspeccion', authMiddleware, async (req, res) => {
         console.error(err);
         return res.status(500).json({ status: 'ERROR', message: 'Fallo interno al procesar reporte contable de fiscalización.' });
     }
+
+    router.get('/verificar-boleto', authMiddleware, async (req, res) => {
+    // Solo Fiscalizadores (rol 4) pueden usar esta función
+    if (req.user.id_rol !== 4) {
+        return res.status(403).json({ status: 'ERROR', message: 'Acceso Denegado: Solo un Fiscalizador puede verificar boletos.' });
+    }
+
+    const { hash } = req.query;
+    if (!hash || hash.trim().length === 0) {
+        return res.status(400).json({ status: 'ERROR', message: 'Debe proporcionar un código de boleto.' });
+    }
+
+    try {
+        const result = await pool.query(
+            `SELECT 
+                b.id_boleto, b.hash_qr, b.estado_boleto, b.monto_pagado_centavos, 
+                b.fecha_emision, b.modalidad_pago,
+                u.nombres as cobrador, bus.placa, bus.numero_padron,
+                rm.nombre_modalidad as ruta,
+                po.nombre_paradero as origen, pd.nombre_paradero as destino
+             FROM boleto b
+             JOIN turno_viaje t ON b.id_turno = t.id_turno
+             JOIN usuario u ON t.id_usuario_cobrador = u.id_usuario
+             JOIN bus ON t.id_bus = bus.id_bus
+             JOIN ruta_modalidad rm ON t.id_ruta_modalidad = rm.id_ruta_modalidad
+             LEFT JOIN tarifario tf ON b.id_tarifario = tf.id_tarifario
+             LEFT JOIN paradero po ON tf.id_paradero_origen = po.id_paradero
+             LEFT JOIN paradero pd ON tf.id_paradero_destino = pd.id_paradero
+             WHERE b.hash_qr = $1
+             LIMIT 1`,
+            [hash.trim()]
+        );
+
+        if (result.rows.length === 0) {
+            return res.json({ status: 'OK', data: null }); // No encontrado
+        }
+
+        return res.json({ status: 'OK', data: result.rows[0] });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ status: 'ERROR', message: 'Error al verificar el boleto.' });
+    }
+});
 });
 
 module.exports = router;
