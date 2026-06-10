@@ -11,9 +11,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// ==========================================
+
 // ENDPOINT DE CONTROL (RESTAURADO)
-// ==========================================
 app.get('/api/health', async (req, res) => {
     try {
         const result = await pool.query('SELECT NOW()');
@@ -27,9 +26,8 @@ app.get('/api/health', async (req, res) => {
     }
 });
 
-// ==========================================
+
 // INYECCIÓN DE CONTROLADORES (MÓDULOS)
-// ==========================================
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/maestros', require('./routes/maestros'));
 app.use('/api/operacion', require('./routes/operacion'));
@@ -39,11 +37,9 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/socio', require('./routes/socio'));
 
 
-// ==========================================
+
 // CONTROL DE RUTAS INEXISTENTES (404 Fallback)
-// ==========================================
 app.use((req, res) => {
-    // ESTA LÍNEA TE AYUDARÁ A DETECTAR EL ERROR EXACTO:
     res.status(404).json({ 
         status: 'ERROR', 
         message: `El endpoint solicitado [${req.method} ${req.url}] no existe en la arquitectura SVDRAYF.` 
