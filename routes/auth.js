@@ -22,7 +22,7 @@ router.post('/register-test', async (req, res) => {
     }
 });
 
-// Login Unificado (RF06 y RF17)
+// Login Unificado 
 router.post('/login', async (req, res) => {
     try {
         const { identificador, password, dispositivo_info } = req.body;
@@ -139,10 +139,8 @@ router.post('/recover', async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: 'Fallo interno al procesar el token de soporte.' });
     }
 });
-// ========================================================
-// REGLA DE NEGOCIO: CAMBIO OBLIGATORIO DE PASSWORD (CUS-05)
-// AGREGAR ESTE BLOQUE EXCLUSIVAMENTE EN: src/routes/auth.js
-// ========================================================
+
+// REGLA DE NEGOCIO: CAMBIO OBLIGATORIO DE PASSWORD 
 router.post('/change-forced-password', authMiddleware, async (req, res) => {
     try {
         const { newPassword } = req.body;
@@ -157,12 +155,10 @@ router.post('/change-forced-password', authMiddleware, async (req, res) => {
             });
         }
 
-        // 1.  ENCRIPCION COMPILADA: Generamos la sal y hasheamos la contraseña 
-        // para que no quede visible en texto plano dentro de Neon DB
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(newPassword.trim(), salt);
 
-        // 2.  ACTUALIZACIÓN ATÓMICA EN POSTGRESQL:
+        //   ACTUALIZACIÓN ATÓMICA EN POSTGRESQL:
         // - Se guarda el password_hash robusto.
         // - Se limpia el campo pendiente cambiando requiere_cambio a false.
         await pool.query(

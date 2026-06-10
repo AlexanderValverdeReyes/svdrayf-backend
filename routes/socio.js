@@ -4,9 +4,9 @@ const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ========================================================
+
 // DASHBOARD DEL SOCIO (KPIs, gráfico de rutas, históricos)
-// ========================================================
+
 router.get('/dashboard', authMiddleware, async (req, res) => {
     if (req.user.id_rol !== 3) return res.status(403).json({ status: 'ERROR', message: 'Acceso solo para socios.' });
     try {
@@ -98,9 +98,8 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
+
 // LISTAR BUSES DEL SOCIO (GET)
-// ========================================================
 router.get('/buses', authMiddleware, async (req, res) => {
     if (req.user.id_rol !== 3) return res.status(403).json({ status: 'ERROR', message: 'Acceso solo para socios.' });
     try {
@@ -122,9 +121,8 @@ router.get('/buses', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
+
 // VENTAS DE UN BUS DEL SOCIO POR PERÍODO (GET)
-// ========================================================
 router.get('/bus-sales/:busId', authMiddleware, async (req, res) => {
     if (req.user.id_rol !== 3) return res.status(403).json({ status: 'ERROR', message: 'Acceso solo para socios.' });
     try {

@@ -32,7 +32,7 @@ router.post('/inspeccion', authMiddleware, async (req, res) => {
         console.error(err);
         return res.status(500).json({ status: 'ERROR', message: 'Fallo interno al procesar reporte contable de fiscalización.' });
     }
-}); // 🚀 CORREGIDO: Se cierra adecuadamente el POST aquí
+}); 
 
 // 2. VERIFICACIÓN DE BOLETO POR HASH (Exclusivo Top-Level)
 router.get('/verificar-boleto', authMiddleware, async (req, res) => {

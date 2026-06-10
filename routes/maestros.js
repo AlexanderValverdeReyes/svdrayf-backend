@@ -6,7 +6,12 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.get('/sync', authMiddleware, async (req, res) => {
     try {
         const [buses, paraderos, tiposPasajero, rutas, motivos, empresa] = await Promise.all([
-            pool.query('SELECT id_bus, placa, numero_padron, capacidad_pasajeros FROM bus WHERE estado = true'),
+            pool.query(`
+                SELECT id_bus, placa, numero_padron, capacidad_pasajeros 
+                FROM bus 
+                WHERE estado = true 
+                  AND id_bus NOT IN (SELECT id_bus FROM turno_viaje WHERE estado_turno = 'ABIERTO')
+            `),
             pool.query('SELECT id_paradero, nombre_paradero FROM paradero WHERE estado = true'),
             pool.query('SELECT id_tipo_pasajero, nombre_tipo FROM tipo_pasajero'),
             pool.query('SELECT id_ruta_modalidad, nombre_modalidad FROM ruta_modalidad'),
@@ -14,7 +19,6 @@ router.get('/sync', authMiddleware, async (req, res) => {
             pool.query('SELECT * FROM configuracion_empresa WHERE id_config = 1')
         ]);
 
-        // Cargar el tarifario completo estructurado para Room SQLite
         const tarifario = await pool.query('SELECT * FROM tarifario');
 
         return res.json({

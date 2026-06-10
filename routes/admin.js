@@ -6,9 +6,7 @@ const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// ========================================================
 // 1. ENDPOINT ANALÍTICO: KPIs DEL DASHBOARD
-// ========================================================
 router.get('/dashboard', authMiddleware, async (req, res) => {
     try {
         const ingresos = await pool.query("SELECT SUM(monto_pagado_centavos) as total FROM boleto WHERE estado_boleto = 'VALIDO'");
@@ -41,9 +39,8 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
-// 2. MÓDULO DE GESTIÓN: USUARIOS / CONDUCTORES (RF01 y RF13)
-// ========================================================
+
+// 2. MÓDULO DE GESTIÓN: USUARIOS / CONDUCTORES 
 router.get('/usuarios', authMiddleware, async (req, res) => {
     try {
         const usuarios = await pool.query(
@@ -82,10 +79,8 @@ router.post('/usuarios', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
-// 3. MÓDULO DE GESTIÓN: MAESTRO DE FLOTA / BUSES (RF03)
-// ========================================================
 
+// 3. MÓDULO DE GESTIÓN: MAESTRO DE FLOTA / BUSES
 router.get('/buses', authMiddleware, async (req, res) => {
     try {
         const buses = await pool.query(
@@ -262,9 +257,8 @@ router.put('/buses/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
+
 // DAR DE BAJA LÓGICA (MODIFICACIÓN DE FLAG DE ESTADO)
-// ========================================================
 router.delete('/buses/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
@@ -350,12 +344,10 @@ router.put('/tarifarios/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
-// GESTIÓN DE ACCESOS: LEER SOLICITUDES ACTIVAS (CUS-05)
-// ========================================================
+
+// GESTIÓN DE ACCESOS: LEER SOLICITUDES ACTIVAS
 router.get('/recuperaciones', authMiddleware, async (req, res) => {
     try {
-        // SOLUCIÓN: Validamos únicamente usado = false para asegurar la visualización inmediata de las filas
         const result = await pool.query(`
             SELECT tr.id_token, tr.id_usuario, tr.fecha_creacion, tr.fecha_expiracion,
                    u.nombres as usuario_nombres, u.correo as usuario_correo, u.dni as usuario_dni, u.id_rol
@@ -370,9 +362,7 @@ router.get('/recuperaciones', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // ACCIÓN A: GENERAR CONTRASEÑA TEMPORAL CRIPTOGRÁFICA
-// ========================================================
 router.post('/recuperaciones/generar/:id_token', authMiddleware, async (req, res) => {
     try {
         const { id_token } = req.params;
@@ -417,9 +407,8 @@ router.post('/recuperaciones/generar/:id_token', authMiddleware, async (req, res
         return res.status(500).json({ status: 'ERROR', error: err.message });
     }
 });
-// ========================================================
+
 // ACCIÓN B: ANULAR SOLICITUD MANUALMENTE (FACTOR PERSONA)
-// ========================================================
 router.post('/recuperaciones/anular/:id_token', authMiddleware, async (req, res) => {
     try {
         const { id_token } = req.params;
@@ -431,9 +420,7 @@ router.post('/recuperaciones/anular/:id_token', authMiddleware, async (req, res)
     }
 });
 
-// ========================================================
 // DASHBOARD EJECUTIVO PARA GERENCIA (dashboard-exec)
-// ========================================================
 router.get('/dashboard-exec', authMiddleware, async (req, res) => {
     try {
         const hoyStats = pool.query(`
@@ -511,9 +498,8 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
+
 // ANULACION DE BOLETO
-// ========================================================
 router.post('/anulacion-boleto', authMiddleware, async (req, res) => {
     try {
         const { id_boleto, id_motivo } = req.body;
@@ -536,9 +522,8 @@ router.post('/anulacion-boleto', authMiddleware, async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });
-// ========================================================
+
 // REGISTRAR INCIDENCIA (POST)
-// ========================================================
 router.post('/incidencias', authMiddleware, async (req, res) => {
     try {
         const { id_turno, id_boleto, tipo_incidencia, descripcion } = req.body;
@@ -564,46 +549,9 @@ router.post('/incidencias', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
-// SIMULAR VENTA DE BOLETO (SOLO PARA PRUEBAS)
-// ========================================================
-router.post('/simular-venta', authMiddleware, async (req, res) => {
-    try {
-        const { id_turno, id_tarifario, monto_centavos } = req.body;
 
-        // Validar existencia de turno y tarifa
-        const turno = await pool.query('SELECT id_turno FROM turno_viaje WHERE id_turno = $1', [id_turno]);
-        const tarifa = await pool.query('SELECT id_tarifario FROM tarifario WHERE id_tarifario = $1', [id_tarifario]);
-        if (turno.rows.length === 0) return res.status(400).json({ status: 'ERROR', message: 'Turno no existe' });
-        if (tarifa.rows.length === 0) return res.status(400).json({ status: 'ERROR', message: 'Tarifa no existe' });
 
-        // Generar valores obligatorios
-        const id_boleto = crypto.randomUUID();                     // UUID único
-        const hash_qr = crypto.randomUUID().replace(/-/g, '');     // hash_qr único (sin guiones para simular)
-        const modalidad_pago = 'EFECTIVO';                          // Valor por defecto para pruebas
-        const estado_sync = 'PENDIENTE';                            // Estado de sincronización
-        const es_reimpresion = false;
-        const alerta_auditoria_qr = false;
-
-        const nuevoBoleto = await pool.query(
-            `INSERT INTO boleto (id_boleto, id_turno, id_tarifario, monto_pagado_centavos, modalidad_pago, estado_boleto, hash_qr, estado_sync, es_reimpresion, alerta_auditoria_qr, fecha_emision)
-             VALUES ($1, $2, $3, $4, $5, 'VALIDO', $6, $7, $8, $9, NOW()) RETURNING id_boleto, fecha_emision`,
-            [id_boleto, id_turno, id_tarifario, monto_centavos, modalidad_pago, hash_qr, estado_sync, es_reimpresion, alerta_auditoria_qr]
-        );
-
-        return res.json({
-            status: 'OK',
-            message: 'Boleto simulado creado con fecha actual.',
-            data: nuevoBoleto.rows[0]
-        });
-    } catch (err) {
-        console.error(err);
-        return res.status(500).json({ status: 'ERROR', message: err.message });
-    }
-});
-// ========================================================
 // LISTAR RUTAS/MODALIDADES PARA FILTROS (GET)
-// ========================================================
 router.get('/rutas-modalidad', authMiddleware, async (req, res) => {
     try {
         const rutas = await pool.query(
@@ -616,9 +564,8 @@ router.get('/rutas-modalidad', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
+
 // VENTAS DE UN BUS POR PERÍODO (GET)
-// ========================================================
 router.get('/bus-sales/:busId', authMiddleware, async (req, res) => {
     try {
         const { busId } = req.params;
@@ -650,9 +597,8 @@ router.get('/bus-sales/:busId', authMiddleware, async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });
-// ========================================================
+
 // LISTAR BOLETOS ANULADOS CON DETALLES (GET)
-// ========================================================
 router.get('/boletos-anulados', authMiddleware, async (req, res) => {
     try {
         const { desde, hasta, placa, motivo } = req.query;
@@ -712,9 +658,8 @@ const conditions = [];
     }
 });
 
-// ========================================================
+
 // MARCAR BOLETO ANULADO COMO AUDITADO (PUT)
-// ========================================================
 router.put('/boletos-anulados/:id_boleto/auditar', authMiddleware, async (req, res) => {
     try {
         const { id_boleto } = req.params;
@@ -740,9 +685,9 @@ router.get('/configuracion', authMiddleware, async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });
-// ========================================================
+
+
 // BUSCAR BOLETOS POR HASH QR O COBRADOR (GET)
-// ========================================================
 router.get('/buscar-boletos', authMiddleware, async (req, res) => {
     try {
         const { hash, cobrador } = req.query;
