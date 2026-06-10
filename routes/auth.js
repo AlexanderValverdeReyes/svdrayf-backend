@@ -1,9 +1,11 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto'); // 🚀 CORREGIDO: Importado de forma global para usar herramientas criptográficas nativas
 const pool = require('../db');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware'); 
+
 // Registro de usuarios de prueba (Utilizar en el setup inicial)
 router.post('/register-test', async (req, res) => {
     try {
@@ -40,15 +42,16 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ status: 'ERROR', message: 'Credenciales incorrectas.' });
         }
 
-        // Generar Token de acceso
+        // 🔒 SOLUCIÓN BLINDAJE ANTICRASH: Añadimos un identificador único (jti) con un UUID aleatorio al payload
         const token = jwt.sign(
             { 
-        id_usuario: user.id_usuario, 
-        id_rol: user.id_rol,
-        requiere_cambio: user.requiere_cambio 
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: '14h' }
+                id_usuario: user.id_usuario, 
+                id_rol: user.id_rol,
+                requiere_cambio: user.requiere_cambio,
+                jti: crypto.randomUUID() // El token siempre será único, impidiendo el error 23505
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '14h' }
         );
 
         // Registrar la sesión en la base de datos para auditoría
@@ -77,6 +80,7 @@ router.post('/login', async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: 'Error interno del servidor.' });
     }
 });
+
 router.post('/recover', async (req, res) => {
     try {
         const { identificador } = req.body;
@@ -114,8 +118,7 @@ router.post('/recover', async (req, res) => {
             });
         }
 
-        // 3. Generar token_hash único usando el módulo criptográfico nativo de Node.js
-        const crypto = require('crypto');
+        // 3. Generar token_hash único
         const token_hash = crypto.randomBytes(32).toString('hex');
 
         // Definir ciclo de vida del token (2 horas de vigencia)
@@ -144,8 +147,6 @@ router.post('/recover', async (req, res) => {
 router.post('/change-forced-password', authMiddleware, async (req, res) => {
     try {
         const { newPassword } = req.body;
-        
-        // El id_usuario se extrae de manera íntegra desde el token JWT validado por el authMiddleware
         const id_usuario = req.user.id_usuario; 
 
         if (!newPassword || newPassword.trim().length < 6) {
@@ -158,9 +159,6 @@ router.post('/change-forced-password', authMiddleware, async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(newPassword.trim(), salt);
 
-        //   ACTUALIZACIÓN ATÓMICA EN POSTGRESQL:
-        // - Se guarda el password_hash robusto.
-        // - Se limpia el campo pendiente cambiando requiere_cambio a false.
         await pool.query(
             `UPDATE usuario 
              SET password_hash = $1, requiere_cambio = false 
@@ -178,4 +176,5 @@ router.post('/change-forced-password', authMiddleware, async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: 'Error interno en el pool de seguridad de Neon DB.' });
     }
 });
+
 module.exports = router;
