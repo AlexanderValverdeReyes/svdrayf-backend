@@ -21,7 +21,7 @@ router.post('/boletos', authMiddleware, async (req, res) => {
         for (const boleto of boletos) {
     const targetTarifario = (boleto.id_tarifario && parseInt(boleto.id_tarifario, 10) > 0) ? parseInt(boleto.id_tarifario, 10) : 3;
 
-    // 🌟 INYECCIÓN AUTOMÁTICA DE ALERTA: Si el bus reporta una anulación, enciende la alerta de revisión física
+
     const alertaAuditoria = (boleto.estado_boleto === 'ANULADO') ? true : (boleto.alerta_auditoria_qr || false);
 
     await client.query(
@@ -34,7 +34,7 @@ router.post('/boletos', authMiddleware, async (req, res) => {
             estado_boleto = EXCLUDED.estado_boleto,
             id_motivo_anulacion = EXCLUDED.id_motivo_anulacion,
             fecha_anulacion = EXCLUDED.fecha_anulacion,
-            alerta_auditoria_qr = EXCLUDED.alerta_auditoria_qr`, // 🚀 ACTUALIZA LA ALERTA EN EL ON CONFLICT
+            alerta_auditoria_qr = EXCLUDED.alerta_auditoria_qr`, 
         [
             boleto.id_boleto, 
             boleto.id_turno, 

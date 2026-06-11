@@ -15,11 +15,11 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
         const fraudes = await pool.query("SELECT COUNT(*) as total FROM boleto WHERE alerta_auditoria_qr = true");
 
         const alertasRecientes = await pool.query(
-            `SELECT b.id_boleto, u.nombres as cobrador, b.monto_pagado_centavos, b.fecha_anulacion 
+    `SELECT b.id_boleto, u.nombres as cobrador, b.monto_pagado_centavos, b.fecha_anulacion 
      FROM boleto b
      JOIN turno_viaje t ON b.id_turno = t.id_turno
      JOIN usuario u ON t.id_usuario_cobrador = u.id_usuario
-     WHERE b.alerta_auditoria_qr = true
+     WHERE b.alerta_auditoria_qr = true AND b.auditado = false
      ORDER BY b.fecha_emision DESC LIMIT 5`
 );
 
@@ -437,9 +437,7 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
         `);
 
         const alertasAuditoria = pool.query(`
-            SELECT COUNT(*) as total 
-    FROM boleto 
-    WHERE alerta_auditoria_qr = true
+    SELECT COUNT(*) as total FROM boleto WHERE alerta_auditoria_qr = true AND auditado = false
 `);
 
         const ingresosPorRuta = pool.query(`
@@ -664,12 +662,12 @@ router.put('/boletos-anulados/:id_boleto/auditar', authMiddleware, async (req, r
     try {
         const { id_boleto } = req.params;
 
-        await pool.query(
+       await pool.query(
     `UPDATE boleto 
-     SET auditado = true, alerta_auditoria_qr = false 
+     SET auditado = true 
      WHERE id_boleto = $1 AND estado_boleto = 'ANULADO'`,
     [id_boleto]
-)
+);
 
         return res.json({ 
             status: 'OK', 
