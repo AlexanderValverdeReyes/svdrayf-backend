@@ -16,12 +16,12 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 
         const alertasRecientes = await pool.query(
             `SELECT b.id_boleto, u.nombres as cobrador, b.monto_pagado_centavos, b.fecha_anulacion 
-             FROM boleto b
-             JOIN turno_viaje t ON b.id_turno = t.id_turno
-             JOIN usuario u ON t.id_usuario_cobrador = u.id_usuario
-             WHERE b.alerta_auditoria_qr = true OR b.estado_boleto = 'ANULADO'
-             ORDER BY b.fecha_emision DESC LIMIT 5`
-        );
+     FROM boleto b
+     JOIN turno_viaje t ON b.id_turno = t.id_turno
+     JOIN usuario u ON t.id_usuario_cobrador = u.id_usuario
+     WHERE b.alerta_auditoria_qr = true
+     ORDER BY b.fecha_emision DESC LIMIT 5`
+);
 
         return res.json({
             status: 'OK',
@@ -438,9 +438,9 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
 
         const alertasAuditoria = pool.query(`
             SELECT COUNT(*) as total 
-            FROM boleto 
-            WHERE alerta_auditoria_qr = true OR estado_boleto = 'ANULADO'
-        `);
+    FROM boleto 
+    WHERE alerta_auditoria_qr = true
+`);
 
         const ingresosPorRuta = pool.query(`
             SELECT rm.nombre_modalidad as ruta, 
@@ -659,27 +659,22 @@ const conditions = [];
 });
 
 
-// MARCAR BOLETO ANULADO COMO AUDITADO (PUT)
+// MARCAR BOLETO ANULADO COMO AUDITADO (PUT) - CORREGIDO
 router.put('/boletos-anulados/:id_boleto/auditar', authMiddleware, async (req, res) => {
     try {
         const { id_boleto } = req.params;
+
         await pool.query(
-            `UPDATE boleto SET auditado = true WHERE id_boleto = $1 AND estado_boleto = 'ANULADO'`,
-            [id_boleto]
-        );
-        return res.json({ status: 'OK', message: 'Boleto marcado como auditado.' });
-    } catch (err) {
-        console.error(err);
-        return res.status(500).json({ status: 'ERROR', message: err.message });
-    }
-});
-router.get('/configuracion', authMiddleware, async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM configuracion_empresa WHERE id_config = 1');
-        if (result.rows.length === 0) {
-            return res.status(404).json({ status: 'ERROR', message: 'No hay configuración de empresa.' });
-        }
-        return res.json({ status: 'OK', data: result.rows[0] });
+    `UPDATE boleto 
+     SET auditado = true, alerta_auditoria_qr = false 
+     WHERE id_boleto = $1 AND estado_boleto = 'ANULADO'`,
+    [id_boleto]
+)
+
+        return res.json({ 
+            status: 'OK', 
+            message: 'Boleto marcado como auditado correctamente. Alerta removida del panel de control.' 
+        });
     } catch (err) {
         console.error(err);
         return res.status(500).json({ status: 'ERROR', message: err.message });

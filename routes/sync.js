@@ -19,35 +19,38 @@ router.post('/boletos', authMiddleware, async (req, res) => {
         await client.query('BEGIN'); 
 
         for (const boleto of boletos) {
-            const targetTarifario = (boleto.id_tarifario && parseInt(boleto.id_tarifario, 10) > 0) ? parseInt(boleto.id_tarifario, 10) : 3;
+    const targetTarifario = (boleto.id_tarifario && parseInt(boleto.id_tarifario, 10) > 0) ? parseInt(boleto.id_tarifario, 10) : 3;
 
-            // Inserción idempotente con soporte ON CONFLICT para actualizaciones asíncronas de estado
-            await client.query(
-                `INSERT INTO boleto (
-                    id_boleto, id_turno, id_tarifario, monto_pagado_centavos, modalidad_pago, 
-                    estado_boleto, hash_qr, alerta_auditoria_qr, fecha_emision, estado_sync, 
-                    es_reimpresion, id_boleto_original, id_motivo_anulacion, fecha_anulacion
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'SINCRONIZADO', $10, $11, $12, $13)
-                ON CONFLICT (id_boleto) DO UPDATE SET 
-                    estado_boleto = EXCLUDED.estado_boleto,
-                    id_motivo_anulacion = EXCLUDED.id_motivo_anulacion,
-                    fecha_anulacion = EXCLUDED.fecha_anulacion`,
-                [
-                    boleto.id_boleto, 
-                    boleto.id_turno, 
-                    targetTarifario, 
-                    boleto.monto_pagado_centavos,
-                    boleto.modalidad_pago, 
-                    boleto.estado_boleto, 
-                    boleto.hash_qr, 
-                    boleto.alerta_auditoria_qr || false,
-                    boleto.fecha_emision, 
-                    boleto.es_reimpresion || false, 
-                    boleto.id_boleto_original || null,
-                    boleto.id_motivo_anulacion || null, 
-                    boleto.fecha_anulacion || null
-                ]
-            );
+    // 🌟 INYECCIÓN AUTOMÁTICA DE ALERTA: Si el bus reporta una anulación, enciende la alerta de revisión física
+    const alertaAuditoria = (boleto.estado_boleto === 'ANULADO') ? true : (boleto.alerta_auditoria_qr || false);
+
+    await client.query(
+        `INSERT INTO boleto (
+            id_boleto, id_turno, id_tarifario, monto_pagado_centavos, modalidad_pago, 
+            estado_boleto, hash_qr, alerta_auditoria_qr, fecha_emision, estado_sync, 
+            es_reimpresion, id_boleto_original, id_motivo_anulacion, fecha_anulacion
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'SINCRONIZADO', $10, $11, $12, $13)
+        ON CONFLICT (id_boleto) DO UPDATE SET 
+            estado_boleto = EXCLUDED.estado_boleto,
+            id_motivo_anulacion = EXCLUDED.id_motivo_anulacion,
+            fecha_anulacion = EXCLUDED.fecha_anulacion,
+            alerta_auditoria_qr = EXCLUDED.alerta_auditoria_qr`, // 🚀 ACTUALIZA LA ALERTA EN EL ON CONFLICT
+        [
+            boleto.id_boleto, 
+            boleto.id_turno, 
+            targetTarifario, 
+            boleto.monto_pagado_centavos,
+            boleto.modalidad_pago, 
+            boleto.estado_boleto, 
+            boleto.hash_qr, 
+            alertaAuditoria, // Pasamos la constante calculada en lugar del fallback antiguo
+            boleto.fecha_emision, 
+            boleto.es_reimpresion || false, 
+            boleto.id_boleto_original || null,
+            boleto.id_motivo_anulacion || null, 
+            boleto.fecha_anulacion || null
+        ]
+    );
 
             if (boleto.estado_boleto === 'ANULADO') {
                 await client.query(
