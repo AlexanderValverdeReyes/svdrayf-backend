@@ -58,6 +58,10 @@ router.post('/usuarios', authMiddleware, async (req, res) => {
     try {
         const { dni, nombres, correo, password, id_rol } = req.body;
         
+        const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
+        if (!nombreRegex.test(nombres)) {
+            return res.status(400).json({ status: 'ERROR', message: 'El nombre solo debe contener letras.' });
+        }
         // Forzamos base decimal para garantizar consistencia: 4 = Fiscalizador, 5 = Cobrador
         const targetRol = parseInt(id_rol, 10);
 
