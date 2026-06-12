@@ -427,13 +427,15 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
             SELECT COALESCE(SUM(monto_pagado_centavos), 0) as ingresos_hoy,
                    COUNT(*) as boletos_hoy
             FROM boleto 
-            WHERE estado_boleto = 'VALIDO' AND DATE(fecha_emision) = CURRENT_DATE
+            WHERE estado_boleto = 'VALIDO' 
+              AND (fecha_emision AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
         `);
 
         const busesActivos = pool.query(`
             SELECT COUNT(DISTINCT id_bus) as en_ruta 
             FROM turno_viaje 
-            WHERE estado_turno = 'ABIERTO' OR estado_turno = 'En Progreso'
+            WHERE UPPER(estado_turno) IN ('ABIERTO', 'EN PROGRESO')
+              AND (fecha_hora_apertura AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
         `);
 
         const alertasAuditoria = pool.query(`
