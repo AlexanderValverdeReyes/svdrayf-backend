@@ -435,9 +435,8 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
             SELECT COUNT(DISTINCT id_bus) as en_ruta 
             FROM turno_viaje 
             WHERE UPPER(estado_turno) IN ('ABIERTO', 'EN PROGRESO')
-              AND (fecha_hora_apertura AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
+              AND (fecha_apertura AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
         `);
-
         const alertasAuditoria = pool.query(`
     SELECT COUNT(*) as total FROM boleto WHERE alerta_auditoria_qr = true AND auditado = false
 `);

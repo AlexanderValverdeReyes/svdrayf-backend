@@ -48,7 +48,7 @@ router.get('/verificar-boleto', authMiddleware, async (req, res) => {
     try {
         const result = await pool.query(
             `SELECT 
-                b.id_boleto,b.id_turno,t.estado AS estado_turno, b.hash_qr, b.estado_boleto, b.monto_pagado_centavos, 
+                b.id_boleto,b.id_turno,t.estado_turno AS estado_turno, b.hash_qr, b.estado_boleto, b.monto_pagado_centavos, 
                 b.fecha_emision, b.modalidad_pago,
                 u.nombres as cobrador, bus.placa, bus.numero_padron,
                 rm.nombre_modalidad as ruta,
