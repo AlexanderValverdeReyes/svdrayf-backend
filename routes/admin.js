@@ -62,6 +62,10 @@ router.post('/usuarios', authMiddleware, async (req, res) => {
         if (!nombreRegex.test(nombres)) {
             return res.status(400).json({ status: 'ERROR', message: 'El nombre solo debe contener letras.' });
         }
+        const correoRegex = /^[^\s@]+@(mala\.com|svdrayf\.com)$/;
+        if (!correoRegex.test(correo.toLowerCase())) {
+            return res.status(400).json({ status: 'ERROR', message: 'El correo debe pertenecer al dominio @mala.com o @svdrayf.com' });
+        }
         // Forzamos base decimal para garantizar consistencia: 4 = Fiscalizador, 5 = Cobrador
         const targetRol = parseInt(id_rol, 10);
 
