@@ -107,6 +107,16 @@ router.get('/buses', authMiddleware, async (req, res) => {
 // ========================================================
 // 4. CONFIGURACIÓN DE DATOS DEL TICKET TÉRMICO (RF14)
 // ========================================================
+router.get('/configuracion', authMiddleware, async (req, res) => {
+    try {
+        const config = await pool.query('SELECT * FROM configuracion_empresa WHERE id_config = 1');
+        return res.json({ status: 'OK', data: config.rows[0] || null });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ status: 'ERROR', message: 'Error al recuperar la configuración del ticket.' });
+    }
+});
+
 router.put('/configuracion', authMiddleware, async (req, res) => {
     try {
         const { razon_social, ruc, direccion_fiscal, leyenda_pie } = req.body;
