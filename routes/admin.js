@@ -357,6 +357,33 @@ router.get('/tarifarios-dependencies', authMiddleware, async (req, res) => {
 router.post('/tarifarios', authMiddleware, async (req, res) => {
     try {
         const { id_ruta_modalidad, id_paradero_origen, id_paradero_destino, id_tipo_pasajero, precio_normal, precio_dom_fer } = req.body;
+
+        // VALIDACIÓN CP11: CAMPOS INCOMPLETOS 
+        if (
+            id_ruta_modalidad === undefined || 
+            id_paradero_origen === undefined || 
+            id_paradero_destino === undefined || 
+            id_tipo_pasajero === undefined || 
+            precio_normal === undefined || 
+            precio_dom_fer === undefined ||
+            precio_normal === null ||
+            precio_dom_fer === null
+        ) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: 'Error: No se puede publicar el tarifario. Existen tramos obligatorios sin precio asignado.' 
+            });
+        }
+
+        // VALIDACIÓN CP12: TARIFAS NEGATIVAS O CERO 
+        if (typeof precio_normal !== 'number' || typeof precio_dom_fer !== 'number' || precio_normal <= 0 || precio_dom_fer <= 0) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: 'Solo se permiten valores numéricos positivos mayores a cero.' 
+            });
+        }
+
+        // Si la data pasa el filtro perimetral, se procede con la base de datos
         await pool.query(`
             INSERT INTO tarifario (id_ruta_modalidad, id_paradero_origen, id_paradero_destino, id_tipo_pasajero, precio_normal_centavos, precio_dom_fer_centavos)
             VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -364,7 +391,6 @@ router.post('/tarifarios', authMiddleware, async (req, res) => {
         );
         return res.json({ status: 'OK', message: 'Tarifario indexado exitosamente en Soles.' });
     } catch (err) {
-        // CAPTURA FILTRO PASO 3 NEON DB: Atrapa inconsistencias geográficas u homónimos de tramos
         if (err.code === '23514') {
             return res.status(400).json({ status: 'ERROR', message: 'Inconsistencia Geográfica: El paradero de origen no puede ser idéntico al paradero de destino para la ruta Mala-Lima.' });
         }

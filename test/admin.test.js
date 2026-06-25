@@ -173,3 +173,72 @@ describe('RF02 - Gestionar Maestro de Flota', () => {
         expect(response.body.message).toBe('Acción denegada: No se puede modificar ni inactivar el vehículo porque cuenta con operaciones asociadas en el turno actual.');
     });
 });
+describe('RF03 - Cargar Tarifario Estático', () => {
+    afterEach(() => {
+        jest.clearAllMocks(); // Limpia los mocks entre ejecuciones [cite: 16]
+    });
+
+    // CP10: PUBLICACIÓN CORRECTA DE TARIFARIO (Happy Path)
+    test('CP10 — Publicación correcta de tarifario', async () => {
+        // ARRANGE: Preparamos un cuerpo de datos completamente válido [cite: 20]
+        const tarifarioValido = {
+            id_ruta_modalidad: 1,
+            id_paradero_origen: 10,
+            id_paradero_destino: 12,
+            id_tipo_pasajero: 2,
+            precio_normal: 5.50,
+            precio_dom_fer: 7.00
+        };
+        pool.query.mockResolvedValueOnce({ rowCount: 1 });
+
+        // ACT: Ejecutamos el método simulando la petición HTTP [cite: 20]
+        const response = await request(app).post('/tarifarios').send(tarifarioValido);
+
+        // ASSERT: Comprobamos el éxito rotundo del almacenamiento [cite: 20, 21]
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.message).toBe('Tarifario indexado exitosamente en Soles.');
+    });
+
+    // CP11: ERROR — CELDAS O TARIFAS INCOMPLETAS (Sad Path)
+    test('CP11 — E1 — Celdas o tarifas incompletas en la matriz', async () => {
+        // ARRANGE: Enviamos un tramo donde falta el precio dominical (undefined) [cite: 20]
+        const tarifarioIncompleto = {
+            id_ruta_modalidad: 1,
+            id_paradero_origen: 10,
+            id_paradero_destino: 12,
+            id_tipo_pasajero: 2,
+            precio_normal: 5.50,
+            precio_dom_fer: undefined // Celda vacía en la matriz
+        };
+
+        // ACT: Enviamos los datos incompletos al servidor [cite: 20]
+        const response = await request(app).post('/tarifarios').send(tarifarioIncompleto);
+
+        // ASSERT: El sistema debe bloquear el proceso con código 400 [cite: 20, 22]
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Error: No se puede publicar el tarifario. Existen tramos obligatorios sin precio asignado.');
+    });
+
+    // CP12: ERROR — VALORES DE TARIFA INVÁLIDOS (Sad Path)
+    test('CP12 — E2 — Error de formato o valores de tarifa inválidos', async () => {
+        // ARRANGE: Digitan un número negativo en el precio regular [cite: 20]
+        const tarifarioNegativo = {
+            id_ruta_modalidad: 1,
+            id_paradero_origen: 10,
+            id_paradero_destino: 12,
+            id_tipo_pasajero: 2,
+            precio_normal: -3.50, // Tarifa inválida
+            precio_dom_fer: 6.00
+        };
+
+        // ACT: Disparamos la petición errónea [cite: 20]
+        const response = await request(app).post('/tarifarios').send(tarifarioNegativo);
+
+        // ASSERT: El validador perimetral intercepta y rechaza la transacción [cite: 20, 22]
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Solo se permiten valores numéricos positivos mayores a cero.');
+    });
+});
