@@ -434,41 +434,49 @@ router.get('/recuperaciones', authMiddleware, async (req, res) => {
     }
 });
 
-// ACCIÓN A: GENERAR CONTRASEÑA TEMPORAL CRIPTOGRÁFICA
+// ACCIÓN A: GENERAR CONTRASEÑA TEMPORAL CRIPTOGRÁFICA (CORREGIDO CP16)
 router.post('/recuperaciones/generar/:id_token', authMiddleware, async (req, res) => {
     try {
         const { id_token } = req.params;
 
-        // Verificar validez de la solicitud
-        const tokenCheck = await pool.query('SELECT id_usuario FROM token_recuperacion WHERE id_token = $1 AND usado = false', [id_token]);
+        // VERIFICACIÓN MEJORADA: Traemos también la fecha de expiración para control de tiempo límite
+        const tokenCheck = await pool.query(
+            'SELECT id_usuario, fecha_expiracion FROM token_recuperacion WHERE id_token = $1 AND usado = false', 
+            [id_token]
+        );
+        
         if (tokenCheck.rows.length === 0) {
             return res.status(400).json({ status: 'ERROR', error: 'La solicitud ya fue procesada o expiró.' });
         }
-        const id_usuario = tokenCheck.rows[0].id_usuario;
 
-        // Generar PIN legible en texto plano
+        const { id_usuario, fecha_expiracion } = tokenCheck.rows[0];
+
+        // ==================== NUEVA VALIDACIÓN (SOLUCIÓN CP16) ====================
+        if (fecha_expiracion && new Date(fecha_expiracion) < new Date()) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: 'El token de recuperación ha expirado o ya fue utilizado. Por favor, solicite una nueva restauración de credenciales.' 
+            });
+        }
+        // ==========================================================================
+
         const claveTemporalClaro = 'SVD-' + Math.random().toString(36).substring(2, 6).toUpperCase();
         
-        // Cifrar la credencial para guardarla en la base de datos
         const bcrypt = require('bcryptjs');
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(claveTemporalClaro, salt);
 
-        // Bloque transaccional atómico
         await pool.query('BEGIN');
         
-        // Actualizar tabla usuario exigiendo el flag de cambio mandatorio
         await pool.query(
             'UPDATE usuario SET password_hash = $1, requiere_cambio = true WHERE id_usuario = $2',
             [password_hash, id_usuario]
         );
         
-        // Marcar la solicitud como atendida (Quema el token)
         await pool.query('UPDATE token_recuperacion SET usado = true WHERE id_token = $1', [id_token]);
         
         await pool.query('COMMIT');
 
-        // Retorna el PIN limpio exclusivamente al Administrador
         return res.json({ 
             status: 'OK', 
             message: 'Clave temporal generada con éxito.',

@@ -242,3 +242,53 @@ describe('RF03 - Cargar Tarifario Estático', () => {
         expect(response.body.message).toBe('Solo se permiten valores numéricos positivos mayores a cero.');
     });
 });
+
+// =========================================================================
+// REQUERIMIENTO: RF04 - RECUPERACIÓN DE CONTRASEÑA
+// =========================================================================
+describe('RF04 - Recuperación de Contraseña', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP14: GENERACIÓN CORRECTA DE PIN TEMPORAL (Happy Path)
+    test('CP14 — Generación correcta de contraseña temporal', async () => {
+        // ARRANGE
+        const idTokenValido = 'token-123';
+        
+        // Simulación 1: El token existe y no ha sido usado
+        pool.query.mockResolvedValueOnce({
+            rows: [{ id_usuario: 7 }]
+        });
+        // Simulación 2: Éxito de la transacción SQL (BEGIN, UPDATEs, COMMIT)
+        pool.query.mockResolvedValue({ rowCount: 1 });
+
+        // ACT
+        const response = await request(app).post(`/recuperaciones/generar/${idTokenValido}`);
+
+        // ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.message).toBe('Clave temporal generada con éxito.');
+        expect(response.body.clave_temporal).toContain('SVD-');
+    });
+
+    // CP16: ERROR — TOKEN DE SEGURIDAD EXPIRADO O CONTROL DE TIEMPO LÍMITE (Sad Path)
+    test('CP16 — E2 — Token de seguridad expirado', async () => {
+        // ARRANGE
+        const idTokenExpirado = 'token-expirado';
+
+        // Simulamos que el token ya expiró en tiempo de base de datos
+        pool.query.mockResolvedValueOnce({
+            rows: [{ id_usuario: 7, fecha_expiracion: new Date(Date.now() - 3600000) }] // Expiró hace 1 hora
+        });
+
+        // ACT
+        const response = await request(app).post(`/recuperaciones/generar/${idTokenExpirado}`);
+
+        // ASSERT
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('El token de recuperación ha expirado o ya fue utilizado. Por favor, solicite una nueva restauración de credenciales.');
+    });
+});
