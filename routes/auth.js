@@ -6,55 +6,69 @@ const pool = require('../db');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware'); 
 
-// Registro de usuarios de prueba (Utilizar en el setup inicial)
-router.post('/register-test', async (req, res) => {
-    try {
-        const { dni, nombres, correo, password, id_rol } = req.body;
-        const salt = await bcrypt.genSalt(10);
-        const password_hash = await bcrypt.hash(password, salt);
 
-        const newUser = await pool.query(
-            `INSERT INTO usuario (dni, nombres, correo, password_hash, requiere_cambio, id_rol) 
-             VALUES ($1, $2, $3, $4, false, $5) RETURNING id_usuario, nombres, correo`,
-            [dni, nombres, correo, password_hash, id_rol]
-        );
-        return res.json({ status: 'OK', message: 'Usuario creado exitosamente', user: newUser.rows[0] });
-    } catch (err) {
-        return res.status(500).json({ status: 'ERROR', error: err.message });
-    }
-});
-
-// Login Unificado 
+// 1. ENDPOINT: LOGIN UNIFICADO (Soportando DNI / Correo + Control de Estado)
 router.post('/login', async (req, res) => {
     try {
         const { identificador, password, dispositivo_info } = req.body;
+
+        // Validación perimetral de entrada básica
+        if (!identificador || !password) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: 'Debe ingresar sus credenciales para acceder.' 
+            });
+        }
+
+        const cleanIdentificador = identificador.trim().toLowerCase();
         const ip = req.ip || req.headers['x-forwarded-for'] || '127.0.0.1';
 
         // Buscar por Correo o DNI
-        const userQuery = await pool.query('SELECT * FROM usuario WHERE correo = $1 OR dni = $1', [identificador]);
+        const userQuery = await pool.query(
+            'SELECT * FROM usuario WHERE LOWER(correo) = $1 OR dni = $1', 
+            [cleanIdentificador]
+        );
+        
         if (userQuery.rows.length === 0) {
-            return res.status(401).json({ status: 'ERROR', message: 'Credenciales incorrectas.' });
+            return res.status(401).json({ 
+                status: 'ERROR', 
+                message: 'Error: Las credenciales introducidas son incorrectas. Por favor, intente de nuevo.' 
+            });
         }
 
         const user = userQuery.rows[0];
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            return res.status(401).json({ status: 'ERROR', message: 'Credenciales incorrectas.' });
+
+        // [CP20] CONTROL DE SEGURIDAD: Cuenta Inactiva / Dada de baja
+        // Si tu tabla usuario maneja una columna "estado" o "activo"
+        if (user.estado === false || user.activo === false) {
+            return res.status(403).json({
+                status: 'ERROR',
+                message: 'Acceso denegada: Su cuenta de personal se encuentra inactiva. Comuníquese con el Administrador de la empresa de transporte.'
+            });
         }
 
-        // 🔒 SOLUCIÓN BLINDAJE ANTICRASH: Añadimos un identificador único (jti) con un UUID aleatorio al payload
+        // Validación criptográfica de la contraseña
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(401).json({ 
+                status: 'ERROR', 
+                message: 'Error: Las credenciales introducidas son incorrectas. Por favor, intente de nuevo.' 
+            });
+        }
+
+        // Generación del Payload JWT con identificador único JTI (Blindaje Anti-Crash)
         const token = jwt.sign(
             { 
                 id_usuario: user.id_usuario, 
                 id_rol: user.id_rol,
                 requiere_cambio: user.requiere_cambio,
-                jti: crypto.randomUUID() // El token siempre será único, impidiendo el error 23505
+                jti: crypto.randomUUID() 
             },
             process.env.JWT_SECRET,
             { expiresIn: '14h' }
         );
 
-        // Registrar la sesión en la base de datos para auditoría
+        // Registro del log de sesión para auditoría gerencial
         const fechaInicio = new Date();
         const fechaExpiracion = new Date(fechaInicio.getTime() + 14 * 60 * 60 * 1000);
 
@@ -76,29 +90,32 @@ router.post('/login', async (req, res) => {
             }
         });
     } catch (err) {
-        console.error(err);
+        console.error(' Error en Login:', err.message);
         return res.status(500).json({ status: 'ERROR', message: 'Error interno del servidor.' });
     }
 });
 
+// 2. ENDPOINT: REGISTRAR SOLICITUD DE RECUPERACIÓN (Cola de Soporte)
 router.post('/recover', async (req, res) => {
     try {
         const { identificador } = req.body;
 
-        if (!identificador) {
+        if (!identificador || !identificador.trim()) {
             return res.status(400).json({ status: 'ERROR', message: 'Debe ingresar su identificador oficial.' });
         }
 
+        const cleanIdentificador = identificador.trim().toLowerCase();
+
         // 1. Validar existencia del operador en Neon DB
         const userQuery = await pool.query(
-            'SELECT id_usuario FROM usuario WHERE correo = $1 OR dni = $1', 
-            [identificador.trim()]
+            'SELECT id_usuario FROM usuario WHERE LOWER(correo) = $1 OR dni = $1', 
+            [cleanIdentificador]
         );
 
         if (userQuery.rows.length === 0) {
             return res.status(404).json({ 
                 status: 'ERROR', 
-                message: 'El DNI o correo ingresado no pertenece al personal autorizado.' 
+                message: 'El DNI o correo ingresado no pertenece al personal authorized.' 
             });
         }
 
@@ -118,14 +135,12 @@ router.post('/recover', async (req, res) => {
             });
         }
 
-        // 3. Generar token_hash único
+        // 3. Generar token criptográfico único
         const token_hash = crypto.randomBytes(32).toString('hex');
-
-        // Definir ciclo de vida del token (2 horas de vigencia)
         const fecha_creacion = new Date();
-        const fecha_expiracion = new Date(fecha_creacion.getTime() + 2 * 60 * 60 * 1000);
+        const fecha_expiracion = new Date(fecha_creacion.getTime() + 2 * 60 * 60 * 1000); // 2 Horas de vigencia
 
-        // 4. Inserción limpia en tu tabla token_recuperacion
+        // 4. Inserción limpia en base de datos
         await pool.query(
             `INSERT INTO token_recuperacion (id_usuario, token_hash, fecha_creacion, fecha_expiracion, usado)
              VALUES ($1, $2, $3, $4, false)`,
@@ -138,12 +153,12 @@ router.post('/recover', async (req, res) => {
         });
 
     } catch (err) {
-        console.error(err);
+        console.error(' Error en Recuperación:', err.message);
         return res.status(500).json({ status: 'ERROR', message: 'Fallo interno al procesar el token de soporte.' });
     }
 });
 
-// REGLA DE NEGOCIO: CAMBIO OBLIGATORIO DE PASSWORD 
+// 3. ENDPOINT: CAMBIO OBLIGATORIO DE PASSWORD (Con bloqueo anti-DNI)
 router.post('/change-forced-password', authMiddleware, async (req, res) => {
     try {
         const { newPassword } = req.body;
@@ -156,9 +171,25 @@ router.post('/change-forced-password', authMiddleware, async (req, res) => {
             });
         }
 
-        const salt = await bcrypt.genSalt(10);
-        const password_hash = await bcrypt.hash(newPassword.trim(), salt);
+        const cleanPassword = newPassword.trim();
 
+        // FILTRO DE SEGURIDAD OPERATIVA: Bloquear contraseñas idénticas al DNI del usuario
+        const identityQuery = await pool.query('SELECT dni FROM usuario WHERE id_usuario = $1', [id_usuario]);
+        if (identityQuery.rows.length > 0) {
+            const userDni = identityQuery.rows[0].dni.trim();
+            if (cleanPassword === userDni) {
+                return res.status(400).json({
+                    status: 'ERROR',
+                    message: 'Por políticas estrictas de seguridad, su nueva contraseña no puede ser idéntica a su número de DNI.'
+                });
+            }
+        }
+
+        // Encriptación segura de la credencial definitiva
+        const salt = await bcrypt.genSalt(10);
+        const password_hash = await bcrypt.hash(cleanPassword, salt);
+
+        // Liberación del flag mandatorio de cambio
         await pool.query(
             `UPDATE usuario 
              SET password_hash = $1, requiere_cambio = false 
@@ -172,8 +203,8 @@ router.post('/change-forced-password', authMiddleware, async (req, res) => {
         });
 
     } catch (err) {
-        console.error(err);
-        return res.status(500).json({ status: 'ERROR', message: 'Error interno en el pool de seguridad de Neon DB.' });
+        console.error(' Error en cambio forzado:', err.message);
+        return res.status(500).json({ status: 'ERROR', message: 'Error interno en el pool de seguridad.' });
     }
 });
 
