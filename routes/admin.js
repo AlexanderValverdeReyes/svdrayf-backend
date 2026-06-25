@@ -240,7 +240,7 @@ router.post('/buses', authMiddleware, async (req, res) => {
         } = req.body;
         
         const nuevoBus = await pool.query(
-            `INSERT INTO bus (placa, numero_padron, marca, modelo, anio_modelo, chasis_numero, kilometraje_inicial, tipo_combustible, capacidad_pasajeros, id_socio, estado)
+            `INSERT INTO bus (placa, numero_padron, marca, modelo, anio_modelo, chasis_numero, kilometraje_inicial, tipo_combustible, capacity_pasajeros, id_socio, estado)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true) RETURNING *`,
             [
                 placa.trim().toUpperCase(), numero_padron.trim(), marca.trim(), 
@@ -251,17 +251,22 @@ router.post('/buses', authMiddleware, async (req, res) => {
         );
         return res.json({ status: 'OK', message: 'Unidad vehicular registrada', data: nuevoBus.rows[0] });
     } catch (err) {
-        //  CAPTURA FILTRO PASO 5 NEON DB: Si el trigger detecta que el id_socio asignado NO tiene rol 3, frena el insert
         if (err.code === 'P0001') {
             return res.status(400).json({ status: 'ERROR', message: err.message });
         }
         if (err.code === '23505') {
-            return res.status(409).json({ status: 'ERROR', message: 'Clave duplicada: La placa, número de padrón o chasis ya se encuentran registrados en la flota.' });
+            const detalleError = err.detail || '';
+            if (detalleError.includes('placa')) {
+                return res.status(409).json({ 
+                    status: 'ERROR', 
+                    message: 'Error: La placa vehicular ingresada ya se encuentra registrada en el sistema.' 
+                });
+            }
+            return res.status(409).json({ status: 'ERROR', message: 'Clave duplicada: El número de padrón o chasis ya se encuentran registrados.' });
         }
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });
-
 // ========================================================
 // MODIFICAR VEHÍCULO (EDICIÓN RESTRINGIDA A PARÁMETROS)
 // ========================================================
@@ -288,6 +293,21 @@ router.put('/buses/:id', authMiddleware, async (req, res) => {
 router.delete('/buses/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Verificación activa contra transacciones en tránsito
+        const verificacionTurno = await pool.query(
+            `SELECT id_turno FROM turno_viaje 
+             WHERE id_bus = $1 AND (fecha_cierre IS NULL OR estado_operativo = 'ACTIVO') LIMIT 1`, 
+            [id]
+        );
+
+        if (verificacionTurno.rowCount > 0) {
+            return res.status(400).json({
+                status: 'ERROR',
+                message: 'Acción denegada: No se puede modificar ni inactivar el vehículo porque cuenta con operaciones asociadas en el turno actual.'
+            });
+        }
+
         await pool.query('UPDATE bus SET estado = false WHERE id_bus = $1', [id]);
         return res.json({ status: 'OK', message: 'Unidad dada de baja en el sistema.' });
     } catch (err) {

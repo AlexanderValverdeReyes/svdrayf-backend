@@ -95,3 +95,81 @@ describe('RF01 - Registrar Usuarios', () => {
         expect(response.body.message).toBe('El número de DNI o correo ya pertenecen a otro empleado registrado.');
     });
 });
+
+describe('RF02 - Gestionar Maestro de Flota', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    test('CP06 — Registro correcto de vehículo', async () => {
+        // ARRANGE [cite: 13, 20]
+        const nuevoVehiculo = {
+            placa: 'F3V-894',
+            numero_padron: '102',
+            marca: 'Mercedes-Benz',
+            modelo: 'O500R',
+            anio_modelo: '2022',
+            chasis_numero: '9BM38402',
+            kilometraje_inicial: '5000',
+            tipo_combustible: 'Diésel',
+            capacidad_pasajeros: '50',
+            id_socio: 3
+        };
+        pool.query.mockResolvedValueOnce({
+            rows: [{ id_bus: 1, placa: 'F3V-894', estado: true }]
+        });
+
+        // ACT [cite: 13, 20]
+        const response = await request(app).post('/buses').send(nuevoVehiculo);
+
+        // ASSERT [cite: 13, 20]
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.message).toBe('Unidad vehicular registrada');
+    });
+
+    test('CP07 — E1 — Número de placa vehicular duplicado', async () => {
+        // ARRANGE [cite: 13, 20]
+        const vehiculoDuplicado = {
+            placa: 'F3V-894',
+            numero_padron: '105',
+            marca: 'Volvo',
+            modelo: 'B11R',
+            anio_modelo: '2023',
+            chasis_numero: '9BM55522',
+            kilometraje_inicial: '1000',
+            tipo_combustible: 'Diésel',
+            capacidad_pasajeros: '45',
+            id_socio: 3
+        };
+        const errorPg = new Error('duplicate key value violates unique constraint "bus_placa_key"');
+        errorPg.code = '23505';
+        errorPg.detail = 'Key (placa)=(F3V-894) already exists.';
+        pool.query.mockRejectedValueOnce(errorPg);
+
+        // ACT [cite: 13, 20]
+        const response = await request(app).post('/buses').send(vehiculoDuplicado);
+
+        // ASSERT [cite: 13, 20]
+        expect(response.statusCode).toBe(409);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Error: La placa vehicular ingresada ya se encuentra registrada en el sistema.');
+    });
+
+    test('CP09 — E3 — Restricción de eliminación (Bus en uso)', async () => {
+        // ARRANGE [cite: 13, 20]
+        const idBusEnUso = 45;
+        pool.query.mockResolvedValueOnce({
+            rowCount: 1,
+            rows: [{ id_turno: 999, id_bus: idBusEnUso }]
+        });
+
+        // ACT [cite: 13, 20]
+        const response = await request(app).delete(`/buses/${idBusEnUso}`);
+
+        // ASSERT [cite: 13, 20]
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Acción denegada: No se puede modificar ni inactivar el vehículo porque cuenta con operaciones asociadas en el turno actual.');
+    });
+});
