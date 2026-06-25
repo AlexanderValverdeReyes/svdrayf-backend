@@ -451,14 +451,13 @@ router.post('/recuperaciones/generar/:id_token', authMiddleware, async (req, res
 
         const { id_usuario, fecha_expiracion } = tokenCheck.rows[0];
 
-        // ==================== NUEVA VALIDACIÓN (SOLUCIÓN CP16) ====================
+        // NUEVA VALIDACIÓN (SOLUCIÓN CP16) 
         if (fecha_expiracion && new Date(fecha_expiracion) < new Date()) {
             return res.status(400).json({ 
                 status: 'ERROR', 
                 message: 'El token de recuperación ha expirado o ya fue utilizado. Por favor, solicite una nueva restauración de credenciales.' 
             });
         }
-        // ==========================================================================
 
         const claveTemporalClaro = 'SVD-' + Math.random().toString(36).substring(2, 6).toUpperCase();
         
