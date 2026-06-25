@@ -40,7 +40,7 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 });
 
 
-// 2. MÓDULO DE GESTIÓN: USUARIOS / CONDUCTORES 
+// 2. MÓDULO DE GESTIÓN: USUARIOS 
 router.get('/usuarios', authMiddleware, async (req, res) => {
     try {
         const usuarios = await pool.query(
@@ -57,6 +57,14 @@ router.get('/usuarios', authMiddleware, async (req, res) => {
 router.post('/usuarios', authMiddleware, async (req, res) => {
     try {
         const { dni, nombres, correo, password, id_rol } = req.body;
+
+        const dniRegex = /^\d{8}$/;
+if (!dni || !dniRegex.test(String(dni).trim())) {
+    return res.status(400).json({ 
+        status: 'ERROR', 
+        message: 'Error: Formato inválido. El DNI debe tener exactamente 8 dígitos.' 
+    });
+}
         
         const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
         if (!nombreRegex.test(nombres)) {

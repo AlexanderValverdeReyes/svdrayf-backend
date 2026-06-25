@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto'); // 🚀 CORREGIDO: Importado de forma global para usar herramientas criptográficas nativas
+const crypto = require('crypto'); 
 const pool = require('../db');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware'); 
