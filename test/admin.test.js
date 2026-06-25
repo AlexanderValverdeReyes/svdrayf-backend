@@ -341,3 +341,152 @@ describe('RFN06 - Visualizar Ingresos Online', () => {
         expect(response.body.data.kpis_hoy.buses_en_ruta).toBe(0);
     });
 });
+
+// REQUERIMIENTO: RFN07 - AUDITAR BOLETOS ANULADOS
+describe('RFN07 - Auditar Boletos Anulados', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP23: CONSULTA CORRECTA DE ANULACIONES (Happy Path)
+    test('CP23 — Consulta correcta de anulaciones con filtros operativos', async () => {
+        // 1. ARRANGE
+        const filasAnuladasSimuladas = [
+            { id_boleto: 101, placa: 'F3V-894', monto_pagado_centavos: 500, motivo: 'Mal paradero seleccionado', cobrador: 'Pedro Mamani', auditado: false }
+        ];
+        pool.query.mockResolvedValueOnce({ rows: filasAnuladasSimuladas });
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/boletos-anulados')
+            .query({ desde: '2026-06-01', hasta: '2026-06-25', placa: 'F3V' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.length).toBe(1);
+        expect(response.body.data[0].motivo).toBe('Mal paradero seleccionado');
+    });
+
+    // CP24: ESCENARIO SINO HAY REGISTROS (Sad Path - Array Vacío)
+    test('CP24 — E1 — Registros inexistentes o vacíos para los criterios seleccionados', async () => {
+        // 1. ARRANGE
+        // Simulamos que no se encuentran coincidencias en la base de datos NeonDB
+        pool.query.mockResolvedValueOnce({ rows: [] });
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/boletos-anulados')
+            .query({ desde: '2026-01-01', hasta: '2026-01-05' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data).toEqual([]); // Comprobamos que retorna una lista vacía limpia
+    });
+
+    // TEST ADICIONAL CONTROL DE INTEGRIDAD: INTENTO DE AUDITAR BOLETO INEXISTENTE
+    test('Debería denegar la auditoría si el boleto no existe o no está anulado', async () => {
+        // 1. ARRANGE
+        const idInvalido = 9999;
+        pool.query.mockResolvedValueOnce({ rowCount: 0 }); // Cero filas afectadas en el UPDATE
+
+        // 2. ACT
+        const response = await request(app).put(`/boletos-anulados/${idInvalido}/auditar`);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(404);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Error: El boleto especificado no existe o no se encuentra en estado ANULADO.');
+    });
+});
+
+
+// =========================================================================
+// REQUERIMIENTO: RFN08 - FILTRAR BOLETOS CON ALERTA DE QR
+// =========================================================================
+describe('RFN08 - Filtrar Boletos con Alerta de QR', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP26: FILTRADO CORRECTO DE ALERTAS (Happy Path)
+    test('CP26 — Filtrado correcto de alertas de discrepancia', async () => {
+        // 1. ARRANGE
+        const alertasSimuladas = [
+            { id_boleto: 501, placa: 'F3V-894', monto_pagado_centavos: 600, estado_boleto: 'VALIDO', cobrador_nombres: 'Pedro Mamani', alerta_auditoria_qr: true }
+        ];
+        pool.query.mockResolvedValueOnce({ rows: alertasSimuladas });
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/boletos-alertas-qr')
+            .query({ desde: '2026-06-01', hasta: '2026-06-25' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.length).toBe(1);
+        expect(response.body.data[0].alerta_auditoria_qr).toBe(true);
+    });
+
+    // CP27: ESCENARIO SIN ALERTAS EN EL RANGO (Sad Path)
+    test('CP27 — E1 — No existen boletos con alerta en el rango seleccionado', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [] }); // Retorna cuadrícula limpia de forma conforme
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/boletos-alertas-qr')
+            .query({ desde: '2026-01-01', hasta: '2026-01-05' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data).toEqual([]); // Comprueba que limpia el grid enviando un array vacío
+    });
+
+    // CP28: LATENCIA CRÍTICA O CAÍDA DE COMUNICACIÓN CON NEON DB (Sad Path)
+    test('CP28 — E2 — Latencia crítica o pérdida de comunicación con el servidor cloud', async () => {
+        // 1. ARRANGE
+        const errorConexion = new Error('Connection timeout to NeonDB cluster endpoint after 5000ms');
+        pool.query.mockRejectedValueOnce(errorConexion);
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/boletos-alertas-qr')
+            .query({ desde: '2026-06-01', hasta: '2026-06-25' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(503);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Error del Servidor: No se pudo conectar con la base de datos NeonDB. Por favor, reintente la consulta en unos instantes.');
+    });
+
+    // VALIDACIÓN INTEGRAL: DETECCIÓN DE FRAUDE POR INTENTO QR REVERTIDO (Métrica avanzada)
+    test('Debería mapear correctamente el boleto si se forzó el cambio de QR a Efectivo', async () => {
+        // 1. ARRANGE
+        const alertaConTelemetria = [
+            { 
+                id_boleto: 702, 
+                placa: 'F3V-894', 
+                monto_pagado_centavos: 500, 
+                modalidad_pago: 'EFECTIVO', // El pago final fue en efectivo
+                estado_boleto: 'VALIDO', 
+                alerta_auditoria_qr: true,  // El sistema encendió la alerta
+                hubo_intento_qr: true       // Porque detectó el intento previo en la app
+            }
+        ];
+        pool.query.mockResolvedValueOnce({ rows: alertaConTelemetria });
+
+        // 2. ACT
+        const response = await request(app).get('/boletos-alertas-qr');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data[0].modalidad_pago).toBe('EFECTIVO');
+        expect(response.body.data[0].hubo_intento_qr).toBe(true);
+        expect(response.body.data[0].alerta_auditoria_qr).toBe(true);
+    });
+}); // 

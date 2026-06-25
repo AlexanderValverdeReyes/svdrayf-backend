@@ -749,23 +749,30 @@ router.put('/boletos-anulados/:id_boleto/auditar', authMiddleware, async (req, r
     try {
         const { id_boleto } = req.params;
 
-       await pool.query(
-    `UPDATE boleto 
-     SET auditado = true 
-     WHERE id_boleto = $1 AND estado_boleto = 'ANULADO'`,
-    [id_boleto]
-);
+        const result = await pool.query(
+            `UPDATE boleto 
+             SET auditado = true 
+             WHERE id_boleto = $1 AND estado_boleto = 'ANULADO'`,
+            [id_boleto]
+        );
+
+        //  CONTROL DE INTEGRIDAD: Validamos si realmente se modificó el boleto anulado
+        if (result.rowCount === 0) {
+            return res.status(404).json({
+                status: 'ERROR',
+                message: 'Error: El boleto especificado no existe o no se encuentra en estado ANULADO.'
+            });
+        }
 
         return res.json({ 
             status: 'OK', 
             message: 'Boleto marcado como auditado correctamente. Alerta removida del panel de control.' 
         });
     } catch (err) {
-        console.error(err);
+        console.error(' Error en Auditoría:', err.message);
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });
-
 
 // BUSCAR BOLETOS POR HASH QR O COBRADOR (GET)
 router.get('/buscar-boletos', authMiddleware, async (req, res) => {
@@ -812,6 +819,68 @@ router.get('/buscar-boletos', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error(err);
         return res.status(500).json({ status: 'ERROR', message: err.message });
+    }
+});
+
+router.get('/boletos-alertas-qr', authMiddleware, async (req, res) => {
+    try {
+        const { desde, hasta } = req.query;
+
+        let query = `
+    SELECT 
+        b.id_boleto,
+        b.fecha_emision,
+        b.monto_pagado_centavos,
+        b.modalidad_pago,
+        b.estado_boleto,
+        b.alerta_auditoria_qr,
+        b.hubo_intento_qr, -- Extraemos la telemetría para el gráfico y la tabla web
+        u.nombres as cobrador_nombres,
+        bus.placa,
+        bus.numero_padron
+    FROM boleto b
+    JOIN turno_viaje t ON b.id_turno = t.id_turno
+    JOIN usuario u ON t.id_usuario_cobrador = u.id_usuario
+    JOIN bus ON t.id_bus = bus.id_bus
+    WHERE b.alerta_auditoria_qr = true
+`;
+
+        const params = [];
+        const conditions = [];
+
+        // Inyección dinámica de filtros cronológicos parametrizados
+        if (desde) {
+            params.push(desde);
+            conditions.push(`b.fecha_emision >= $${params.length}::date`);
+        }
+        if (hasta) {
+            params.push(hasta);
+            conditions.push(`b.fecha_emision < ($${params.length}::date + interval '1 day')`);
+        }
+
+        if (conditions.length > 0) {
+            query += ' AND ' + conditions.join(' AND ');
+        }
+
+        query += ' ORDER BY b.fecha_emision DESC';
+
+        const result = await pool.query(query, params);
+        return res.json({ status: 'OK', data: result.rows });
+
+    } catch (err) {
+        console.error(' Error crítico en Auditoría QR:', err.message);
+        
+        // [CP28] CONTINGENCIA: Captura de latencia crítica, microcortes o pérdida de enlace cloud
+        const msgError = err.message || '';
+        if (msgError.includes('timeout') || msgError.includes('connection') || msgError.includes('NeonDB') || msgError.includes('pool')) {
+            return res.status(503).json({ 
+                status: 'ERROR', 
+                message: 'Error del Servidor: No se pudo conectar con la base de datos NeonDB. Por favor, reintente la consulta en unos instantes.' 
+            });
+        }
+        
+        // Fallback de seguridad general
+        return res.status(500).json({ status: 'ERROR', message: 'Fallo interno al compilar alertas de seguridad.' });
     }
 });
 module.exports = router;

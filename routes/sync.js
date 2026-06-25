@@ -21,20 +21,26 @@ router.post('/boletos', authMiddleware, async (req, res) => {
         for (const boleto of boletos) {
     const targetTarifario = (boleto.id_tarifario && parseInt(boleto.id_tarifario, 10) > 0) ? parseInt(boleto.id_tarifario, 10) : 3;
 
-
-    const alertaAuditoria = (boleto.estado_boleto === 'ANULADO') ? true : (boleto.alerta_auditoria_qr || false);
+    // Si el boleto final es EFECTIVO pero la app reporta que se intentó usar QR, se dispara la alerta automáticamente.
+    const huboIntentoQR = boleto.hubo_intento_qr || false;
+    let alertaAuditoria = (boleto.estado_boleto === 'ANULADO') ? true : false;
+    
+    if (boleto.modalidad_pago === 'EFECTIVO' && huboIntentoQR === true) {
+        alertaAuditoria = true;
+    }
 
     await client.query(
         `INSERT INTO boleto (
             id_boleto, id_turno, id_tarifario, monto_pagado_centavos, modalidad_pago, 
-            estado_boleto, hash_qr, alerta_auditoria_qr, fecha_emision, estado_sync, 
+            estado_boleto, hash_qr, alerta_auditoria_qr, hubo_intento_qr, fecha_emision, estado_sync, 
             es_reimpresion, id_boleto_original, id_motivo_anulacion, fecha_anulacion
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'SINCRONIZADO', $10, $11, $12, $13)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'SINCRONIZADO', $11, $12, $13, $14)
         ON CONFLICT (id_boleto) DO UPDATE SET 
             estado_boleto = EXCLUDED.estado_boleto,
             id_motivo_anulacion = EXCLUDED.id_motivo_anulacion,
             fecha_anulacion = EXCLUDED.fecha_anulacion,
-            alerta_auditoria_qr = EXCLUDED.alerta_auditoria_qr`, 
+            alerta_auditoria_qr = EXCLUDED.alerta_auditoria_qr,
+            hubo_intento_qr = EXCLUDED.hubo_intento_qr`, 
         [
             boleto.id_boleto, 
             boleto.id_turno, 
@@ -43,7 +49,8 @@ router.post('/boletos', authMiddleware, async (req, res) => {
             boleto.modalidad_pago, 
             boleto.estado_boleto, 
             boleto.hash_qr, 
-            alertaAuditoria, // Pasamos la constante calculada en lugar del fallback antiguo
+            alertaAuditoria,
+            huboIntentoQR, 
             boleto.fecha_emision, 
             boleto.es_reimpresion || false, 
             boleto.id_boleto_original || null,
