@@ -499,9 +499,10 @@ router.post('/recuperaciones/anular/:id_token', authMiddleware, async (req, res)
     }
 });
 
-// DASHBOARD EJECUTIVO PARA GERENCIA (dashboard-exec)
+// DASHBOARD EJECUTIVO PARA GERENCIA: VISTA INICIAL EN TIEMPO REAL (RFN06)
 router.get('/dashboard-exec', authMiddleware, async (req, res) => {
     try {
+        // 1. KPIs Financieros y Comerciales del día de HOY
         const hoyStats = pool.query(`
             SELECT COALESCE(SUM(monto_pagado_centavos), 0) as ingresos_hoy,
                    COUNT(*) as boletos_hoy
@@ -510,16 +511,20 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
               AND (fecha_emision AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
         `);
 
+        // 2. [CORRECCIÓN VÁLIDA]: Unidades en ruta con turno estrictamente operativo ('EN PROGRESO') hoy
         const busesActivos = pool.query(`
             SELECT COUNT(DISTINCT id_bus) as en_ruta 
             FROM turno_viaje 
-            WHERE UPPER(estado_turno) IN ('ABIERTO', 'EN PROGRESO')
+            WHERE UPPER(estado_turno) = 'EN PROGRESO'
               AND (fecha_apertura AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
         `);
-        const alertasAuditoria = pool.query(`
-    SELECT COUNT(*) as total FROM boleto WHERE alerta_auditoria_qr = true AND auditado = false
-`);
 
+        // 3. Alertas de auditoría QR pendientes por atender
+        const alertasAuditoria = pool.query(`
+            SELECT COUNT(*) as total FROM boleto WHERE alerta_auditoria_qr = true AND auditado = false
+        `);
+
+        // 4. Recaudación consolidada por cada modalidad de ruta
         const ingresosPorRuta = pool.query(`
             SELECT rm.nombre_modalidad as ruta, 
                    COALESCE(SUM(b.monto_pagado_centavos), 0) / 100.0 as total_soles
@@ -529,6 +534,7 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
             GROUP BY rm.nombre_modalidad
         `);
 
+        // 5. Métricas globales acumuladas históricas en la plataforma
         const historicoGlobal = pool.query(`
             SELECT COALESCE(SUM(monto_pagado_centavos), 0) as total_historico_centavos,
                    COUNT(*) as total_boletos_historico
@@ -536,6 +542,7 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
             WHERE estado_boleto = 'VALIDO'
         `);
 
+        // 6. Detección de la ruta líder en rendimientos contables
         const rutaMasRentable = pool.query(`
             SELECT rm.nombre_modalidad as ruta, 
                    COALESCE(SUM(b.monto_pagado_centavos), 0) / 100.0 as rendimiento
@@ -571,7 +578,7 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
         });
 
     } catch (err) {
-        console.error(err);
+        console.error(' Error en Dashboard:', err.message);
         return res.status(500).json({ status: 'ERROR', message: 'Fallo al procesar métricas gerenciales.' });
     }
 });

@@ -292,3 +292,52 @@ describe('RF04 - Recuperación de Contraseña', () => {
         expect(response.body.message).toBe('El token de recuperación ha expirado o ya fue utilizado. Por favor, solicite una nueva restauración de credenciales.');
     });
 });
+
+// =========================================================================
+// REQUERIMIENTO: RFN06 - VISUALIZAR INGRESOS ONLINE
+// =========================================================================
+describe('RFN06 - Visualizar Ingresos Online', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP21: VISUALIZACIÓN CORRECTA DE KPIs OPERATIVOS DE HOY (Happy Path)
+    test('CP21 — Visualización correcta de ingresos y kpis en tiempo real', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [{ ingresos_hoy: 25000, boletos_hoy: 50 }] }); // KPIs Hoy
+        pool.query.mockResolvedValueOnce({ rows: [{ en_ruta: 3 }] }); // Buses En Progreso hoy
+        pool.query.mockResolvedValueOnce({ rows: [{ total: 1 }] }); // Alertas
+        pool.query.mockResolvedValueOnce({ rows: [{ ruta: 'Mala-Lima', total_soles: 250.00 }] }); // Gráfico
+        pool.query.mockResolvedValueOnce({ rows: [{ total_historico_centavos: 90000, total_boletos_historico: 180 }] }); // Histórico
+        pool.query.mockResolvedValueOnce({ rows: [{ ruta: 'Mala-Lima', rendimiento: 250.00 }] }); // Ruta líder
+
+        // 2. ACT
+        const response = await request(app).get('/dashboard-exec');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.kpis_hoy.ingresos_hoy_soles).toBe(250.00);
+        expect(response.body.data.kpis_hoy.buses_en_ruta).toBe(3);
+    });
+
+    // CP22: ESCENARIO INEXISTENCIA DE OPERACIONES HOY (Sad Path)
+    test('CP22 — E1 — Inexistencia de datos sincronizados en la jornada actual', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [{ ingresos_hoy: 0, boletos_hoy: 0 }] }); // Sin transacciones hoy
+        pool.query.mockResolvedValueOnce({ rows: [{ en_ruta: 0 }] }); // Cero buses en progreso
+        pool.query.mockResolvedValueOnce({ rows: [{ total: 0 }] });
+        pool.query.mockResolvedValueOnce({ rows: [] }); 
+        pool.query.mockResolvedValueOnce({ rows: [{ total_historico_centavos: 90000, total_boletos_historico: 180 }] });
+        pool.query.mockResolvedValueOnce({ rows: [] });
+
+        // 2. ACT
+        const response = await request(app).get('/dashboard-exec');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.kpis_hoy.ingresos_hoy_soles).toBe(0); // Fuerza los contadores a cero
+        expect(response.body.data.kpis_hoy.buses_en_ruta).toBe(0);
+    });
+});
