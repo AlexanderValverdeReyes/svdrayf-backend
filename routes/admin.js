@@ -818,6 +818,7 @@ router.put('/boletos-anulados/:id_boleto/auditar', authMiddleware, async (req, r
 router.get('/buscar-boletos', authMiddleware, async (req, res) => {
     try {
         const { hash, cobrador } = req.query;
+        
         let query = `
             SELECT 
                 b.id_boleto,
@@ -844,10 +845,10 @@ router.get('/buscar-boletos', authMiddleware, async (req, res) => {
 
         const params = [];
         if (hash) {
-            params.push(hash);
+            params.push(hash.trim());
             query += ` WHERE b.hash_qr = $${params.length}`;
         } else if (cobrador) {
-            params.push(`%${cobrador}%`);
+            params.push(`%${cobrador.trim()}%`);
             query += ` WHERE u.nombres ILIKE $${params.length}`;
         } else {
             return res.status(400).json({ status: 'ERROR', message: 'Debe proporcionar un parámetro de búsqueda.' });
@@ -855,9 +856,11 @@ router.get('/buscar-boletos', authMiddleware, async (req, res) => {
 
         query += ` ORDER BY b.fecha_emision DESC LIMIT 50`;
         const result = await pool.query(query, params);
+        
+        // Retorna las filas encontradas de manera síncrona
         return res.json({ status: 'OK', data: result.rows });
     } catch (err) {
-        console.error(err);
+        console.error(' Error en buscador global:', err.message);
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });

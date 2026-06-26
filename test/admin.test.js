@@ -747,3 +747,52 @@ describe('RFN15 - Gestión de Mensajes en el Ticket', () => {
         expect(response.body.message).toContain('Caracteres no soportados');
     });
 });
+
+// REQUERIMIENTO: RFN16 - BUSCADOR DE BOLETOS (BÚSQUEDA GLOBAL)
+describe('RFN16 - Buscador de Boletos (Búsqueda Global)', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP51: LOCALIZACIÓN CORRECTA DE PASAJE (Happy Path)
+    test('CP51 — Localización correcta de pasaje por código hash QR', async () => {
+        // 1. ARRANGE
+        const boletoSimulado = [{
+            id_boleto: '999',
+            hash_qr: 'TOKEN-ALFANUMERICO-VALIDO-123',
+            estado_boleto: 'VALIDO',
+            cobrador: 'Pedro Mamani',
+            placa: 'F3V-894',
+            origen: 'Paradero Inicial Mala',
+            destino: 'Lima Centro'
+        }];
+        pool.query.mockResolvedValueOnce({ rows: boletoSimulado });
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/buscar-boletos')
+            .query({ hash: 'TOKEN-ALFANUMERICO-VALIDO-123' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.length).toBe(1);
+        expect(response.body.data[0].hash_qr).toBe('TOKEN-ALFANUMERICO-VALIDO-123');
+    });
+
+    // CP52: BOLETO INEXISTENTE (Sad Path)
+    test('CP52 — E1 — Retornar matriz vacía de forma conforme si el boleto no existe', async () => {
+        // 1. ARRANGE: NeonDB busca el código y no encuentra ninguna coincidencia
+        pool.query.mockResolvedValueOnce({ rows: [] });
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/buscar-boletos')
+            .query({ hash: 'HASH-INEXISTENTE-999999' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data).toEqual([]); // Retorna vacío; el frontend leerá esto y pintará el banner rojo del CP52
+    });
+});
