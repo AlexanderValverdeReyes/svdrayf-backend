@@ -892,3 +892,39 @@ router.get('/boletos-alertas-qr', authMiddleware, async (req, res) => {
     }
 });
 module.exports = router;
+
+
+// =========================================================================
+// RFN13: GESTIÓN DE COBRADORES - BAJA LÓGICA CON CONTROL DE TURNOS (CP42)
+// =========================================================================
+router.delete('/usuarios/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Control Perimetral: Validar si el cobrador tiene un turno de viaje activo en la Panamericana
+        const turnoActivo = await pool.query(
+            `SELECT id_turno FROM turno_viaje 
+             WHERE id_usuario_cobrador = $1 AND fecha_cierre IS NULL LIMIT 1`, 
+            [id]
+        );
+
+        if (turnoActivo.rowCount > 0) {
+            return res.status(400).json({
+                status: 'ERROR',
+                message: 'Operación Bloqueada por Seguridad: No se puede inactivar al cobrador porque cuenta con un turno de viaje activo en ruta. Registre primero el cierre de viaje y liquidación de caja.'
+            });
+        }
+
+        // 2. Si el personal no se encuentra en ruta, procedemos con la deactivación lógica
+        // Nota: Asegúrate de que tu tabla 'usuario' maneje una columna de control de estado (estado/activo)
+        await pool.query('UPDATE usuario SET estado = false WHERE id_usuario = $1', [id]);
+
+        return res.json({ 
+            status: 'OK', 
+            message: 'Personal operativo desactivado del sistema exitosamente.' 
+        });
+    } catch (err) {
+        console.error(' Error en baja de usuario:', err.message);
+        return res.status(500).json({ status: 'ERROR', error: err.message });
+    }
+});

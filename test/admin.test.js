@@ -588,3 +588,67 @@ describe('RFN11 - Filtrar Dashboard Web', () => {
         expect(response.body.message).toBe('Parámetros inválidos: La fecha de finalización no puede ser menor a la fecha de inicio del tramo operativo.');
     });
 });
+
+// REQUERIMIENTO: RFN13 - GESTIÓN DE COBRADORES
+describe('RFN13 - Gestión de Cobradores', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP40: REGISTRO CORRECTO (Happy Path)
+    test('CP40 — Registro correcto de personal de recaudo', async () => {
+        // 1. ARRANGE
+        const nuevoCobrador = {
+            dni: '77777777',
+            nombres: 'Carlos Mendoza Vega',
+            correo: 'carlos@svdrayf.com',
+            password: 'Cobrador2026!',
+            id_rol: 5 // Rol: Cobrador
+        };
+        pool.query.mockResolvedValueOnce({ rows: [{ id_usuario: 50, nombres: 'Carlos Mendoza Vega' }] });
+
+        // 2. ACT
+        const response = await request(app).post('/usuarios').send(nuevoCobrador);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.message).toBe('Personal operativo registrado exitosamente.');
+    });
+
+    // CP41: ERROR — DNI INVÁLIDO O CON EXTENSIÓN INCORRECTA (Sad Path)
+    test('CP41 — E1 — Número de documento de identidad (DNI) duplicado o inválido', async () => {
+        // 1. ARRANGE
+        const cobradorDniInvalido = {
+            dni: '12345', // Invalido: Menor a 8 dígitos
+            nombres: 'Carlos Mendoza Vega',
+            correo: 'carlos@svdrayf.com',
+            password: 'Cobrador2026!',
+            id_rol: 5
+        };
+
+        // 2. ACT
+        const response = await request(app).post('/usuarios').send(cobradorDniInvalido);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Error: Formato inválido. El DNI debe tener exactamente 8 dígitos.');
+    });
+
+    // CP42: ERROR — INTENTO DE INACTIVACIÓN CON TURNO ACTIVO (Sad Path)
+    test('CP42 — E2 — Intento de inactivación con turno de viaje activo a bordo de un bus', async () => {
+        // 1. ARRANGE
+        const idCobradorEnRuta = 88;
+        // Simulamos que la base de datos detecta una jornada abierta vinculada a este usuario
+        pool.query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id_turno: 900 }] });
+
+        // 2. ACT
+        const response = await request(app).delete(`/usuarios/${idCobradorEnRuta}`);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Operación Bloqueada por Seguridad: No se puede inactivar al cobrador porque cuenta con un turno de viaje activo en ruta. Registre primero el cierre de viaje y liquidación de caja.');
+    });
+});
