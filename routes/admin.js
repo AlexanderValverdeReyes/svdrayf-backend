@@ -650,11 +650,19 @@ router.get('/rutas-modalidad', authMiddleware, async (req, res) => {
 });
 
 
-// VENTAS DE UN BUS POR PERÍODO (GET)
+// VENTAS DE UN BUS POR PERÍODO (GET) - OPTIMIZADO CON CONTROL CRONOLÓGICO (RFN11)
 router.get('/bus-sales/:busId', authMiddleware, async (req, res) => {
     try {
         const { busId } = req.params;
         const { from, to } = req.query;
+
+        //SOLUCIÓN CP35: VALIDACIÓN DE RANGOS INVERTIDOS 
+        if (from && to && new Date(from) > new Date(to)) {
+            return res.status(400).json({
+                status: 'ERROR',
+                message: 'Parámetros inválidos: La fecha de finalización no puede ser menor a la fecha de inicio del tramo operativo.'
+            });
+        }
 
         let query = `
             SELECT 
@@ -664,7 +672,7 @@ router.get('/bus-sales/:busId', authMiddleware, async (req, res) => {
             JOIN turno_viaje t ON b.id_turno = t.id_turno
             WHERE t.id_bus = $1 AND b.estado_boleto = 'VALIDO'
         `;
-        const params = [busId];   // ← sin tipo
+        const params = [busId];
 
         if (from) {
             query += ` AND b.fecha_emision >= $${params.length + 1}`;
@@ -678,7 +686,7 @@ router.get('/bus-sales/:busId', authMiddleware, async (req, res) => {
         const result = await pool.query(query, params);
         return res.json({ status: 'OK', data: result.rows[0] });
     } catch (err) {
-        console.error(err);
+        console.error(' Error en bus-sales:', err.message);
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });

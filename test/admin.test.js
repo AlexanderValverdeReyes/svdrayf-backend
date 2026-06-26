@@ -545,3 +545,46 @@ describe('RFN10 - Contabilizar Flujo de Pasajes', () => {
         expect(response.body.data.kpis_historicos.total_boletos_vendidos).toBe(100);
     });
 });
+
+// REQUERIMIENTO: RFN11 - FILTRAR DASHBOARD WEB
+describe('RFN11 - Filtrar Dashboard Web', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP34: APLICACIÓN CORRECTA DE FILTROS CRUZADOS (Happy Path)
+    test('CP34 — Aplicación correcta de filtros cruzados con fechas válidas', async () => {
+        // 1. ARRANGE
+        const resumenSimulado = { total_soles: 320.50, total_boletos: 64 };
+        pool.query.mockResolvedValueOnce({ rows: [resumenSimulado] });
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/bus-sales/5')
+            .query({ from: '2026-06-01', to: '2026-06-10' });
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.total_soles).toBe(320.50);
+        expect(response.body.data.total_boletos).toBe(64);
+    });
+
+    // CP35: ERROR — RANGOS CRONOLÓGICOS INVERTIDOS (Sad Path)
+    test('CP35 — E1 — Rechazo automático si la fecha de fin es menor a la de inicio', async () => {
+        // 1. ARRANGE
+        const fechaInicioFutura = '2026-06-25';
+        const fechaFinPasada = '2026-06-10'; // Inversión intencional de parámetros
+
+        // 2. ACT
+        const response = await request(app)
+            .get('/bus-sales/5')
+            .query({ from: fechaInicioFutura, to: fechaFinPasada });
+
+        // 3. ASSERT
+        // El escudo perimetral del backend intercepta la incoherencia y responde 400
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Parámetros inválidos: La fecha de finalización no puede ser menor a la fecha de inicio del tramo operativo.');
+    });
+});
