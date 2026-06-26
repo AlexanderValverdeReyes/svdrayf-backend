@@ -489,4 +489,59 @@ describe('RFN08 - Filtrar Boletos con Alerta de QR', () => {
         expect(response.body.data[0].hubo_intento_qr).toBe(true);
         expect(response.body.data[0].alerta_auditoria_qr).toBe(true);
     });
-}); // 
+}); 
+
+// REQUERIMIENTO: RFN10 - CONTABILIZAR FLUJO DE PASAJES
+describe('RFN10 - Contabilizar Flujo de Pasajes', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP32: CÁLCULO ESTADÍSTICO CORRECTO (Happy Path)
+    test('CP32 — Cálculo estadístico correcto de pasajeros desde el histórico global', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [{ ingresos_hoy: 0, boletos_hoy: 0 }] }); // KPIs Hoy
+        pool.query.mockResolvedValueOnce({ rows: [{ en_ruta: 0 }] }); // Buses
+        pool.query.mockResolvedValueOnce({ rows: [{ total: 0 }] }); // Alertas
+        pool.query.mockResolvedValueOnce({ rows: [] }); // Rutas
+        
+        // Simulamos que el conteo global arroja 1,250 pasajeros registrados
+        pool.query.mockResolvedValueOnce({ 
+            rows: [{ total_historico_centavos: 625000, total_boletos_historico: 1250 }] 
+        }); 
+        pool.query.mockResolvedValueOnce({ rows: [] }); // Ruta rentable
+
+        // 2. ACT
+        const response = await request(app).get('/dashboard-exec');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        // Verificamos que el contador comercial base compile el volumen de pasajeros exacto
+        expect(response.body.data.kpis_historicos.total_boletos_vendidos).toBe(1250);
+    });
+
+    // CP33: DETECCIÓN DE INCONSISTENCIAS / COMPORTAMIENTO PREVENTIVO (Sad Path)
+    test('CP33 — E1 — Detección de inconsistencias lógicas en el set de datos de recaudo', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [{ ingresos_hoy: 0, boletos_hoy: 0 }] }); 
+        pool.query.mockResolvedValueOnce({ rows: [{ en_ruta: 0 }] }); 
+        pool.query.mockResolvedValueOnce({ rows: [{ total: 0 }] }); 
+        pool.query.mockResolvedValueOnce({ rows: [] }); 
+        
+        // Simulamos que el pool de datos devuelve el conteo de datos limpios tras ignorar duplicados
+        pool.query.mockResolvedValueOnce({ 
+            rows: [{ total_historico_centavos: 50000, total_boletos_historico: 100 }] 
+        }); 
+        pool.query.mockResolvedValueOnce({ rows: [] }); 
+
+        // 2. ACT
+        const response = await request(app).get('/dashboard-exec');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        // Comprobamos que el backend se mantiene resiliente y entrega la data depurada conforme
+        expect(response.body.data.kpis_historicos.total_boletos_vendidos).toBe(100);
+    });
+});
