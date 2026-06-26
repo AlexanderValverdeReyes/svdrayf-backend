@@ -136,14 +136,46 @@ router.get('/configuracion', authMiddleware, async (req, res) => {
 router.put('/configuracion', authMiddleware, async (req, res) => {
     try {
         const { razon_social, ruc, direccion_fiscal, leyenda_pie } = req.body;
+
+        //VALIDACIÓN ESTRICTA DE RUC 
+        const rucRegex = /^\d{11}$/;
+        if (!ruc || !rucRegex.test(String(ruc).trim())) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: 'Formato incorrecto: El RUC debe estar compuesto obligatoriamente por exactamente 11 dígitos numéricos.' 
+            });
+        }
+
+        if (leyenda_pie) {
+            const leyendaTxt = String(leyenda_pie).trim();
+
+            // [CP48]: Control de desborde de línea para papel de 58mm
+            if (leyendaTxt.length > 40) {
+                return res.status(400).json({
+                    status: 'ERROR',
+                    message: "Límite excedido: El mensaje final no puede superar los 40 caracteres para garantizar una impresión correcta en una sola línea del papel térmico de 58mm."
+                });
+            }
+
+            // [CP49]: Exclusión de emojis/símbolos incompatibles con hardware Bluetooth
+            const leyendaRegex = /^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\s.,!¡¿?()"-]*$/;
+            if (!leyendaRegex.test(leyendaTxt)) {
+                return res.status(400).json({
+                    status: 'ERROR',
+                    message: "Caracteres no soportados: Solo se permiten letras, números, espacios y signos de puntuación básicos para prevenir errores tipográficos o caracteres corrompidos en las miniticketeras Bluetooth."
+                });
+            }
+        }
+
         const config = await pool.query(
             `UPDATE configuracion_empresa 
              SET razon_social = $1, ruc = $2, direccion_fiscal = $3, leyenda_pie = $4 
              WHERE id_config = 1 RETURNING *`,
-            [razon_social, ruc, direccion_fiscal, leyenda_pie]
+            [razon_social.trim(), ruc.trim(), direccion_fiscal.trim(), leyenda_pie ? leyenda_pie.trim() : null]
         );
         return res.json({ status: 'OK', message: 'Datos del ticket actualizados', data: config.rows[0] });
     } catch (err) {
+        console.error(' Error al actualizar ticket:', err.message);
         return res.status(500).json({ status: 'ERROR', error: err.message });
     }
 });

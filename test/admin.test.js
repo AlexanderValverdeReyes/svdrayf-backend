@@ -652,3 +652,98 @@ describe('RFN13 - Gestión de Cobradores', () => {
         expect(response.body.message).toBe('Operación Bloqueada por Seguridad: No se puede inactivar al cobrador porque cuenta con un turno de viaje activo en ruta. Registre primero el cierre de viaje y liquidación de caja.');
     });
 });
+
+// REQUERIMIENTO: RFN14 - CONFIGURACIÓN DE DATOS DE TICKET
+describe('RFN14 - Configuración de Datos de Ticket', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP43: ACTUALIZACIÓN CONFORME (Happy Path)
+    test('CP43 — Actualización conforme de metadatos de comprobante', async () => {
+        // 1. ARRANGE
+        const configValida = { razon_social: 'Transportes SVDRAYF S.A.C.', ruc: '20601234567', direccion_fiscal: 'Av. Mala 123', leyenda_pie: 'Buen viaje' };
+        pool.query.mockResolvedValueOnce({ rows: [configValida] });
+
+        // 2. ACT
+        const response = await request(app).put('/configuracion').send(configValida);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.message).toBe('Datos del ticket actualizados');
+    });
+
+    // CP45: ERROR — RUC INCOMPLETO O CON LETRAS (Sad Path)
+    test('CP45 — E2 — Número de RUC comercial con estructura inválida', async () => {
+        // 1. ARRANGE: Enviamos un RUC con menos de 11 dígitos (Deficiencia corregida)
+        const configRucInvalido = { razon_social: 'Transportes SVDRAYF S.A.C.', ruc: '2060123', direccion_fiscal: 'Av. Mala 123' };
+
+        // 2. ACT
+        const response = await request(app).put('/configuracion').send(configRucInvalido);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Formato incorrecto: El RUC debe estar compuesto obligatoriamente por exactamente 11 dígitos numéricos.');
+    });
+});
+
+// REQUERIMIENTO: RFN15 - GESTIÓN DE MENSAJES EN EL TICKET
+describe('RFN15 - Gestión de Mensajes en el Ticket', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP47: ACTUALIZACIÓN CORRECTA (Happy Path)
+    test('CP47 — Actualización correcta de frase final de saludo', async () => {
+        // 1. ARRANGE
+        const datosValidos = { razon_social: 'SVDRAYF S.A.C.', ruc: '20601234567', direccion_fiscal: 'Mala', leyenda_pie: '¡Gracias por su preferencia!' };
+        pool.query.mockResolvedValueOnce({ rows: [datosValidos] });
+
+        // 2. ACT
+        const response = await request(app).put('/configuracion').send(datosValidos);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+    });
+
+    // CP48: ERROR POR LONGITUD EXCEDIDA (Sad Path)
+    test('CP48 — E1 — Detener grabado si el mensaje excede los 40 caracteres', async () => {
+        // 1. ARRANGE: Mensaje con 41 caracteres intencionales
+        const datosConFraseLarga = { 
+            razon_social: 'SVDRAYF S.A.C.', 
+            ruc: '20601234567', 
+            direccion_fiscal: 'Mala', 
+            leyenda_pie: 'Este mensaje de pie de pagina es demasiado lar' 
+        };
+
+        // 2. ACT
+        const response = await request(app).put('/configuracion').send(datosConFraseLarga);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toContain('Límite excedido: El mensaje final no puede superar los 40 caracteres');
+    });
+
+    // CP49: ERROR POR CARACTERES ESPECIALES/EMOJIS (Sad Path)
+    test('CP49 — E2 — Denegar actualización si incluye emojis no soportados por ticketeras', async () => {
+        // 1. ARRANGE: Inserción de un emoji prohibido en terminales térmicas
+        const datosConEmoji = { 
+            razon_social: 'SVDRAYF S.A.C.', 
+            ruc: '20601234567', 
+            direccion_fiscal: 'Mala', 
+            leyenda_pie: 'Viaje seguro con nosotros 🚌✨' 
+        };
+
+        // 2. ACT
+        const response = await request(app).put('/configuracion').send(datosConEmoji);
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(400);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toContain('Caracteres no soportados');
+    });
+});
