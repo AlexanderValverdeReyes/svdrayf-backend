@@ -796,3 +796,69 @@ describe('RFN16 - Buscador de Boletos (Búsqueda Global)', () => {
         expect(response.body.data).toEqual([]); // Retorna vacío; el frontend leerá esto y pintará el banner rojo del CP52
     });
 });
+
+// =========================================================================
+// REQUERIMIENTO: RFN48 - CONTABILIZAR PASAJEROS POR TRAMO
+// =========================================================================
+describe('RFN48 - Contabilizar Pasajeros por Tramo', () => {
+    afterEach(() => {
+        jest.clearAllMocks();
+    });
+
+    // CP137: ESCENARIO EXITOSO — PROCESAMIENTO CORRECTO DE ESTADÍSTICAS (Happy Path)
+    test('CP137 — Procesamiento correcto de estadísticas de tramo con pasajeros', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [{ ingresos_hoy: 25000, boletos_hoy: 50 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ en_ruta: 3 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ total: 1 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ ruta: 'Mala-Lima', total_soles: 250.00 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ total_historico_centavos: 90000, total_boletos_historico: 180 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ ruta: 'Mala-Lima', rendimiento: 250.00 }] });
+        
+        // Simulación de la 7ma consulta analítica: Datos válidos de tramos ocupados
+        pool.query.mockResolvedValueOnce({
+            rows: [
+                { origen: 'Paradero Mala', destino: 'Chilca', cantidad_pasajeros: 14 },
+                { origen: 'Chilca', destino: 'Pucusana', cantidad_pasajeros: 8 }
+            ]
+        });
+
+        // 2. ACT
+        const response = await request(app).get('/dashboard-exec');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.pasajeros_tramos).toBeDefined();
+        expect(response.body.data.pasajeros_tramos[0].cantidad_pasajeros).toBe(14);
+        expect(response.body.data.pasajeros_tramos[1].origen).toBe('Chilca');
+    });
+
+    // CP138: EXCEPCIÓN — INTENTO DE CONSULTAR TRAMOS EN VIAJE SIN PASAJEROS (Sad Path)
+    test('CP138 — E1 — Inicialización de la lista de tramos con valores en cero', async () => {
+        // 1. ARRANGE
+        pool.query.mockResolvedValueOnce({ rows: [{ ingresos_hoy: 0, boletos_hoy: 0 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ en_ruta: 0 }] });
+        pool.query.mockResolvedValueOnce({ rows: [{ total: 0 }] });
+        pool.query.mockResolvedValueOnce({ rows: [] });
+        pool.query.mockResolvedValueOnce({ rows: [{ total_historico_centavos: 0, total_boletos_historico: 0 }] });
+        pool.query.mockResolvedValueOnce({ rows: [] });
+        
+        // Simulación de la 7ma consulta: Tramos inicializados en cero por ausencia de boletaje
+        pool.query.mockResolvedValueOnce({
+            rows: [
+                { origen: 'Paradero Mala', destino: 'Chilca', cantidad_pasajeros: 0 },
+                { origen: 'Chilca', destino: 'Pucusana', cantidad_pasajeros: 0 }
+            ]
+        });
+
+        // 2. ACT
+        const response = await request(app).get('/dashboard-exec');
+
+        // 3. ASSERT
+        expect(response.statusCode).toBe(200);
+        expect(response.body.status).toBe('OK');
+        expect(response.body.data.pasajeros_tramos[0].cantidad_pasajeros).toBe(0);
+        expect(response.body.data.pasajeros_tramos[1].cantidad_pasajeros).toBe(0);
+    });
+});

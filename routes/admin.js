@@ -531,7 +531,7 @@ router.post('/recuperaciones/anular/:id_token', authMiddleware, async (req, res)
     }
 });
 
-// DASHBOARD EJECUTIVO PARA GERENCIA: VISTA INICIAL EN TIEMPO REAL (RFN06)
+// DASHBOARD EJECUTIVO PARA GERENCIA: VISTA INICIAL EN TIEMPO REAL (RFN06 / RFN48)
 router.get('/dashboard-exec', authMiddleware, async (req, res) => {
     try {
         // 1. KPIs Financieros y Comerciales del día de HOY
@@ -543,7 +543,7 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
               AND (fecha_emision AT TIME ZONE 'UTC' AT TIME ZONE 'America/Lima')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'America/Lima')::date
         `);
 
-        // 2. [CORRECCIÓN VÁLIDA]: Unidades en ruta con turno estrictamente operativo ('EN PROGRESO') hoy
+        // 2. Unidades en ruta con turno estrictamente operativo ('EN PROGRESO') hoy
         const busesActivos = pool.query(`
             SELECT COUNT(DISTINCT id_bus) as en_ruta 
             FROM turno_viaje 
@@ -586,8 +586,21 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
             ORDER BY rendimiento DESC LIMIT 1
         `);
 
-        const [hStats, bActivos, aAuditoria, iRuta, hGlobal, rRentable] = await Promise.all([
-            hoyStats, busesActivos, alertasAuditoria, ingresosPorRuta, historicoGlobal, rutaMasRentable
+        // 7. [NUEVO - RFN48]: Conteo de Pasajeros por Tramo de Viaje (Origen -> Destino)
+        const pasajerosPorTramo = pool.query(`
+            SELECT po.nombre_paradero as origen,
+                   pd.nombre_paradero as destino,
+                   COUNT(b.id_boleto)::int as cantidad_pasajeros
+            FROM tarifario tf
+            JOIN paradero po ON tf.id_paradero_origen = po.id_paradero
+            JOIN paradero pd ON tf.id_paradero_destino = pd.id_paradero
+            LEFT JOIN boleto b ON tf.id_tarifario = b.id_tarifario AND b.estado_boleto = 'VALIDO'
+            GROUP BY po.nombre_paradero, pd.nombre_paradero
+            ORDER BY cantidad_pasajeros DESC
+        `);
+
+        const [hStats, bActivos, aAuditoria, iRuta, hGlobal, rRentable, pTramo] = await Promise.all([
+            hoyStats, busesActivos, alertasAuditoria, ingresosPorRuta, historicoGlobal, rutaMasRentable, pasajerosPorTramo
         ]);
 
         return res.json({
@@ -605,7 +618,9 @@ router.get('/dashboard-exec', authMiddleware, async (req, res) => {
                     total_boletos_vendidos: parseInt(hGlobal.rows[0].total_boletos_historico, 10),
                     ruta_lider_nombre: rRentable.rows[0] ? rRentable.rows[0].ruta : 'Ninguna registrada',
                     ruta_lider_rendimiento: rRentable.rows[0] ? parseFloat(rRentable.rows[0].rendimiento) : 0
-                }
+                },
+                // Despliegue de la matriz de tramos para el control estadístico de la gerencia
+                pasajeros_tramos: pTramo.rows
             }
         });
 
