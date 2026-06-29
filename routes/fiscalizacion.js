@@ -1,10 +1,9 @@
-// src/routes/fiscalizacion.js
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// 1. REGISTRO DE INSPECCIÓN VIAL
+// 1. REGISTRO DE INSPECCIÓN VIAL (Actualizado con ID de Fiscalizador)
 router.post('/inspeccion', authMiddleware, async (req, res) => {
     if (req.user.id_rol !== 4) {
         return res.status(403).json({ status: 'ERROR', message: 'Acceso Denegado: Solo un Fiscalizador puede reportar inspecciones viales.' });
@@ -18,10 +17,11 @@ router.post('/inspeccion', authMiddleware, async (req, res) => {
             return res.status(400).json({ status: 'ERROR', message: 'Error Aritmético: La cantidad de pasajeros físicos a bordo debe ser un número entero mayor o igual a cero.' });
         }
 
+        // Se inyecta req.user.id_usuario para asociar de manera mandatoria la autoría del registro
         await pool.query(
-            `INSERT INTO incidencias (id_turno, id_boleto, tipo_incidencia, descripcion, pasajeros_fisicos, fecha_hora)
-             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
-            [id_turno, id_boleto_afectado || null, tipo_incidencia || 'NORMAL', descripcion, conteoPasajeros]
+            `INSERT INTO incidencias (id_turno, id_boleto, tipo_incidencia, descripcion, pasajeros_fisicos, fecha_hora, id_usuario_fiscalizador)
+             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, $6)`,
+            [id_turno, id_boleto_afectado || null, tipo_incidencia || 'NORMAL', descripcion, conteoPasajeros, req.user.id_usuario]
         );
 
         return res.json({ status: 'OK', message: 'Reporte de fiscalización manual perimetral consolidado correctamente en la central.' });
@@ -58,7 +58,7 @@ router.get('/verificar-boleto', authMiddleware, async (req, res) => {
              JOIN usuario u ON t.id_usuario_cobrador = u.id_usuario
              JOIN bus ON t.id_bus = bus.id_bus
              JOIN ruta_modalidad rm ON t.id_ruta_modalidad = rm.id_ruta_modalidad
-             LEFT JOIN tarifario tf ON b.id_tarifario = tf.id_tarifario                                                                              
+             LEFT JOIN tarifario tf ON b.id_tarifario = tf.id_tarifario                                                                                 
              LEFT JOIN paradero po ON tf.id_paradero_origen = po.id_paradero
              LEFT JOIN paradero pd ON tf.id_paradero_destino = pd.id_paradero
              WHERE b.hash_qr = $1
@@ -74,6 +74,31 @@ router.get('/verificar-boleto', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error(err);
         return res.status(500).json({ status: 'ERROR', message: 'Error al verificar el boleto.' });
+    }
+});
+
+// 3. NUEVO ENDPOINT: CARGAR HISTORIAL FILTRADO POR FISCALIZADOR
+router.get('/historial-inspecciones', authMiddleware, async (req, res) => {
+    if (req.user.id_rol !== 4) {
+        return res.status(403).json({ status: 'ERROR', message: 'Acceso Denegado: Historial exclusivo para personal de fiscalización.' });
+    }
+
+    try {
+        const result = await pool.query(
+            `SELECT i.id_incidencia, i.tipo_incidencia, i.descripcion, i.fecha_hora, i.pasajeros_fisicos,
+                    bus.placa, bus.numero_padron
+             FROM incidencias i
+             JOIN turno_viaje t ON i.id_turno = t.id_turno
+             JOIN bus ON t.id_bus = bus.id_bus
+             WHERE i.id_usuario_fiscalizador = $1
+             ORDER BY i.fecha_hora DESC`,
+            [req.user.id_usuario]
+        );
+
+        return res.json({ status: 'OK', data: result.rows });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({ status: 'ERROR', message: 'Error interno al recopilar la bitácora de inspecciones.' });
     }
 });
 
