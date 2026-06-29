@@ -6,11 +6,10 @@ const pool = require('../db');
 const router = express.Router();
 const authMiddleware = require('../middleware/authMiddleware'); 
 
-
-// 1. ENDPOINT: LOGIN UNIFICADO (Soportando DNI / Correo + Control de Estado)
+// 1. ENDPOINT: LOGIN UNIFICADO (Con Restricción de Perfil Web y Expiración de DNI)
 router.post('/login', async (req, res) => {
     try {
-        const { identificador, password, dispositivo_info } = req.body;
+        const { identificador, password, dispositivo_info, es_web } = req.body;
 
         // Validación perimetral de entrada básica
         if (!identificador || !password) {
@@ -38,8 +37,25 @@ router.post('/login', async (req, res) => {
 
         const user = userQuery.rows[0];
 
+        //  CANDADO RFN41 / CP123: Restricción de Perfil en Plataforma Web
+        // Conjunto autorizado en web: 1 (Admin), 2 (Gerente), 3 (Socio). Bloqueados: 4 (Fiscalizador) y 5 (Cobrador)
+        if (es_web === true && (user.id_rol === 4 || user.id_rol === 5)) {
+            return res.status(403).json({
+                status: 'ERROR',
+                message: 'Acceso denegado: Operación ilegal. Su perfil no cuenta con permisos autorizados para iniciar sesión en la plataforma Web.'
+            });
+        }
+
+        //  INTERCEPTOR DE SEGURIDAD OPERATIVA: Expiración del DNI como Contraseña
+        // Si ya realizó su primer cambio de clave, tiene prohibido volver a usar su DNI como contraseña provisional
+        if (user.requiere_cambio === false && password.trim() === user.dni.trim()) {
+            return res.status(401).json({
+                status: 'ERROR',
+                message: 'Error de seguridad: El uso de su DNI como contraseña provisional ha expirado. Debe utilizar su clave cifrada definitiva.'
+            });
+        }
+
         // [CP20] CONTROL DE SEGURIDAD: Cuenta Inactiva / Dada de baja
-        // Si tu tabla usuario maneja una columna "estado" o "activo"
         if (user.estado === false || user.activo === false) {
             return res.status(403).json({
                 status: 'ERROR',
@@ -192,19 +208,19 @@ router.post('/change-forced-password', authMiddleware, async (req, res) => {
         // Liberación del flag mandatorio de cambio
         await pool.query(
             `UPDATE usuario 
-             SET password_hash = $1, requiere_cambio = false 
+             SET password_hash = $1, requiere_cambio = false
              WHERE id_usuario = $2`,
             [password_hash, id_usuario]
         );
 
-        return res.json({ 
-            status: 'OK', 
-            message: 'Credencial corporativa encriptada y actualizada de forma conforme.' 
+        return res.json({
+            status: 'OK',
+            message: 'Contraseña actualizada y encriptada de forma segura.'
         });
 
     } catch (err) {
-        console.error(' Error en cambio forzado:', err.message);
-        return res.status(500).json({ status: 'ERROR', message: 'Error interno en el pool de seguridad.' });
+        console.error(' Error en Recuperación:', err.message);
+        return res.status(500).json({ status: 'ERROR', message: 'Fallo interno al procesar el cambio forzado.' });
     }
 });
 
