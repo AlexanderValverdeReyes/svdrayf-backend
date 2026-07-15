@@ -41,12 +41,26 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 
 
 // 2. MÓDULO DE GESTIÓN: USUARIOS 
+
+router.get('/usuarios', authMiddleware, async (req, res) => {
+    try {
+        const usuarios = await pool.query(
+            `SELECT u.id_usuario, u.dni, u.nombres, u.correo, r.nombre_rol 
+             FROM usuario u 
+             JOIN rol r ON u.id_rol = r.id_rol 
+             ORDER BY u.id_usuario DESC`
+        );
+        return res.json({ status: 'OK', data: usuarios.rows });
+    } catch (err) {
+        return res.status(500).json({ status: 'ERROR', error: err.message });
+    }
+});
+
+// Endpoint de Registro 
 router.post('/usuarios', authMiddleware, async (req, res) => {
     try {
-        // Retiramos "password" de la desestructuración del cuerpo de la petición
         const { dni, nombres, correo, id_rol } = req.body;
 
-        // Validaciones rigurosas de integridad del DNI
         const dniRegex = /^\d{8}$/;
         if (!dni || !dniRegex.test(String(dni).trim())) {
             return res.status(400).json({ 
@@ -67,12 +81,10 @@ router.post('/usuarios', authMiddleware, async (req, res) => {
 
         const targetRol = parseInt(id_rol, 10);
 
-        // REGLA DE NEGOCIO: La contraseña inicial es el DNI del operario
         const rawPassword = dni.trim(); 
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(rawPassword, salt);
 
-        // Se inserta "requiere_cambio" en TRUE para obligar al usuario a resetearla en su primer login
         const nuevoUsuario = await pool.query(
             `INSERT INTO usuario (dni, nombres, correo, password_hash, requiere_cambio, id_rol) 
              VALUES ($1, $2, $3, $4, true, $5) 
