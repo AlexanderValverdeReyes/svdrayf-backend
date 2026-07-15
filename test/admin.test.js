@@ -241,7 +241,34 @@ describe('RF03 - Cargar Tarifario Estático', () => {
         expect(response.body.status).toBe('ERROR');
         expect(response.body.message).toBe('Solo se permiten valores numéricos positivos mayores a cero.');
     });
+    // CP13: ERROR — DUPLICIDAD DE TRAMOS O TARIFAS CONTRADICTORIAS (Sad Path)
+    test('CP13 — E3 — Intento de duplicidad de tramos con tarifas contradictorias', async () => {
+        // ARRANGE: Enviamos una combinación de paraderos que ya se encuentra mapeada en Neon DB
+        const tramoDuplicadoContradictorio = {
+            id_ruta_modalidad: 1,
+            id_paradero_origen: 10, // Tramo idéntico al CP10
+            id_paradero_destino: 12, // Tramo idéntico al CP10
+            id_tipo_pasajero: 2,
+            precio_normal: 9.90, // Tarifa contradictoria diferente a la guardada originalmente
+            precio_dom_fer: 12.00
+        };
+
+        // Simulamos el lanzamiento de excepción de PostgreSQL por llave o índice compuesto duplicado (Código 23505)
+        const errorDuplicidadMatriz = new Error('duplicate key value violates unique constraint "idx_tramo_modalidad_pasajero"');
+        errorDuplicidadMatriz.code = '23505';
+        errorDuplicidadMatriz.detail = 'Key (id_ruta_modalidad, id_paradero_origen, id_paradero_destino)=(1, 10, 12) already exists.';
+        pool.query.mockRejectedValueOnce(errorDuplicidadMatriz);
+
+        // ACT: Despachamos la petición conflictiva hacia el backend
+        const response = await request(app).post('/tarifarios').send(tramoDuplicadoContradictorio);
+
+        // ASSERT: El sistema detecta el conflicto relacional y exige unificar el criterio antes de persistir
+        expect(response.statusCode).toBe(409);
+        expect(response.body.status).toBe('ERROR');
+        expect(response.body.message).toBe('Error de Duplicidad: El tramo con esa combinación de paraderos ya posee una tarifa configurada.');
+    });
 });
+
 
 // =========================================================================
 // REQUERIMIENTO: RF04 - RECUPERACIÓN DE CONTRASEÑA

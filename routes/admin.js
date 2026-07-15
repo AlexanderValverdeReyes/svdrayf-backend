@@ -41,52 +41,50 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 
 
 // 2. MÓDULO DE GESTIÓN: USUARIOS 
-router.get('/usuarios', authMiddleware, async (req, res) => {
-    try {
-        const usuarios = await pool.query(
-            `SELECT u.id_usuario, u.dni, u.nombres, u.correo, r.nombre_rol 
-             FROM usuario u 
-             JOIN rol r ON u.id_rol = r.id_rol ORDER BY u.id_usuario DESC`
-        );
-        return res.json({ status: 'OK', data: usuarios.rows });
-    } catch (err) {
-        return res.status(500).json({ status: 'ERROR', error: err.message });
-    }
-});
-
 router.post('/usuarios', authMiddleware, async (req, res) => {
     try {
-        const { dni, nombres, correo, password, id_rol } = req.body;
+        // Retiramos "password" de la desestructuración del cuerpo de la petición
+        const { dni, nombres, correo, id_rol } = req.body;
 
+        // Validaciones rigurosas de integridad del DNI
         const dniRegex = /^\d{8}$/;
-if (!dni || !dniRegex.test(String(dni).trim())) {
-    return res.status(400).json({ 
-        status: 'ERROR', 
-        message: 'Error: Formato inválido. El DNI debe tener exactamente 8 dígitos.' 
-    });
-}
+        if (!dni || !dniRegex.test(String(dni).trim())) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: 'Error: Formato inválido. El DNI debe tener exactamente 8 dígitos.' 
+            });
+        }
         
         const nombreRegex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/;
-        if (!nombreRegex.test(nombres)) {
+        if (!nombres || !nombreRegex.test(nombres.trim())) {
             return res.status(400).json({ status: 'ERROR', message: 'El nombre solo debe contener letras.' });
         }
+
         const correoRegex = /^[^\s@]+@(mala\.com|svdrayf\.com)$/;
-        if (!correoRegex.test(correo.toLowerCase())) {
+        if (!correo || !correoRegex.test(correo.trim().toLowerCase())) {
             return res.status(400).json({ status: 'ERROR', message: 'El correo debe pertenecer al dominio @mala.com o @svdrayf.com' });
         }
-        // Forzamos base decimal para garantizar consistencia: 4 = Fiscalizador, 5 = Cobrador
+
         const targetRol = parseInt(id_rol, 10);
 
+        // REGLA DE NEGOCIO: La contraseña inicial es el DNI del operario
+        const rawPassword = dni.trim(); 
         const salt = await bcrypt.genSalt(10);
-        const password_hash = await bcrypt.hash(password, salt);
+        const password_hash = await bcrypt.hash(rawPassword, salt);
 
+        // Se inserta "requiere_cambio" en TRUE para obligar al usuario a resetearla en su primer login
         const nuevoUsuario = await pool.query(
             `INSERT INTO usuario (dni, nombres, correo, password_hash, requiere_cambio, id_rol) 
-             VALUES ($1, $2, $3, $4, true, $5) RETURNING id_usuario, nombres, correo, id_rol`,
+             VALUES ($1, $2, $3, $4, true, $5) 
+             RETURNING id_usuario, nombres, correo, id_rol`,
             [dni.trim(), nombres.trim(), correo.trim().toLowerCase(), password_hash, targetRol]
         );
 
-        return res.json({ status: 'OK', message: 'Personal operativo registrado exitosamente.', data: nuevoUsuario.rows[0] });
+        return res.json({ 
+            status: 'OK', 
+            message: 'Personal operativo registrado exitosamente. Su contraseña temporal es su número de DNI.', 
+            data: nuevoUsuario.rows[0] 
+        });
     } catch (err) {
         if (err.code === '23505') {
             return res.status(409).json({ status: 'ERROR', message: 'El número de DNI o correo ya pertenecen a otro empleado registrado.' });
@@ -94,7 +92,6 @@ if (!dni || !dniRegex.test(String(dni).trim())) {
         return res.status(500).json({ status: 'ERROR', error: err.message });
     }
 });
-
 
 // 3. MÓDULO DE GESTIÓN: MAESTRO DE FLOTA / BUSES
 router.get('/buses', authMiddleware, async (req, res) => {
