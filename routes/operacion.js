@@ -14,14 +14,41 @@ router.post('/turno/apertura', authMiddleware, async (req, res) => {
         const { id_bus, id_ruta_modalidad } = req.body;
         const id_usuario_cobrador = req.user.id_usuario;
 
-        // Intentamos la inserción atómica directa. Neon DB validará con 'idx_bus_turno_activo'
+        // 1. CONTROL PERIMETRAL: Verificar existencia y estado del Bus en Neon DB
+        const busCheck = await pool.query(
+            'SELECT estado, placa FROM bus WHERE id_bus = $1', 
+            [id_bus]
+        );
+
+        if (busCheck.rowCount === 0) {
+            return res.status(442).json({ 
+                status: 'ERROR', 
+                message: 'Inconsistencia de Datos: El vehículo seleccionado no existe en el maestro de flota.' 
+            });
+        }
+
+        // REGLA DE NEGOCIO: Si el bus está dado de baja (estado = false), bloqueamos la apertura
+        if (!busCheck.rows[0].estado) {
+            return res.status(400).json({ 
+                status: 'ERROR', 
+                message: `Bloqueo de Jornada: El autobús con placa [${busCheck.rows[0].placa}] ha sido dado de baja por la administración. No se permiten operaciones.` 
+            });
+        }
+
+        // 2. Si el bus está activo, intentamos la inserción atómica directa. 
+        // Neon DB validará duplicidad con 'idx_bus_turno_activo'
         const nuevoTurno = await pool.query(
             `INSERT INTO turno_viaje (id_bus, id_usuario_cobrador, id_ruta_modalidad, fecha_apertura, estado_turno)
              VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 'ABIERTO') RETURNING *`,
             [id_bus, id_usuario_cobrador, id_ruta_modalidad]
         );
 
-        return res.json({ status: 'OK', message: 'Turno aperturado de manera conforme.', turno: nuevoTurno.rows[0] });
+        return res.json({ 
+            status: 'OK', 
+            message: 'Turno aperturado de manera conforme.', 
+            turno: nuevoTurno.rows[0] 
+        });
+
     } catch (err) {
         if (err.code === '23505') {
             return res.status(409).json({
