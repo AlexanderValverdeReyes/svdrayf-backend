@@ -42,10 +42,14 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 
 // 2. MÓDULO DE GESTIÓN: USUARIOS 
 
+// 2. MÓDULO DE GESTIÓN: USUARIOS (CORREGIDO: Inclusión de columna estado)
+// =========================================================================
+
 router.get('/usuarios', authMiddleware, async (req, res) => {
     try {
+        // CORRECCIÓN: Se agrega u.estado al SELECT para que viaje hacia el frontend
         const usuarios = await pool.query(
-            `SELECT u.id_usuario, u.dni, u.nombres, u.correo, r.nombre_rol 
+            `SELECT u.id_usuario, u.dni, u.nombres, u.correo, r.nombre_rol, u.estado 
              FROM usuario u 
              JOIN rol r ON u.id_rol = r.id_rol 
              ORDER BY u.id_usuario DESC`
@@ -56,7 +60,7 @@ router.get('/usuarios', authMiddleware, async (req, res) => {
     }
 });
 
-// Endpoint de Registro 
+// Endpoint de Registro
 router.post('/usuarios', authMiddleware, async (req, res) => {
     try {
         const { dni, nombres, correo, id_rol } = req.body;
@@ -85,10 +89,11 @@ router.post('/usuarios', authMiddleware, async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const password_hash = await bcrypt.hash(rawPassword, salt);
 
+        // NOTA: No es necesario enviar 'estado' en el INSERT porque la columna tiene DEFAULT true en PostgreSQL
         const nuevoUsuario = await pool.query(
             `INSERT INTO usuario (dni, nombres, correo, password_hash, requiere_cambio, id_rol) 
              VALUES ($1, $2, $3, $4, true, $5) 
-             RETURNING id_usuario, nombres, correo, id_rol`,
+             RETURNING id_usuario, nombres, correo, id_rol, estado`, // RETURNING actualizado
             [dni.trim(), nombres.trim(), correo.trim().toLowerCase(), password_hash, targetRol]
         );
 
