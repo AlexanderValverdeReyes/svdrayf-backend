@@ -42,9 +42,6 @@ router.get('/dashboard', authMiddleware, async (req, res) => {
 
 // 2. MÓDULO DE GESTIÓN: USUARIOS 
 
-// 2. MÓDULO DE GESTIÓN: USUARIOS (CORREGIDO: Inclusión de columna estado)
-// =========================================================================
-
 router.get('/usuarios', authMiddleware, async (req, res) => {
     try {
         // CORRECCIÓN: Se agrega u.estado al SELECT para que viaje hacia el frontend
@@ -134,9 +131,7 @@ router.get('/buses', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // 4. CONFIGURACIÓN DE DATOS DEL TICKET TÉRMICO (RF14)
-// ========================================================
 router.get('/configuracion', authMiddleware, async (req, res) => {
     try {
         const config = await pool.query('SELECT * FROM configuracion_empresa WHERE id_config = 1');
@@ -194,9 +189,7 @@ router.put('/configuracion', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // 5. MATRIZ DE PERMISOS Y ROLES (RF02)
-// ========================================================
 router.get('/permisos/matriz', authMiddleware, async (req, res) => {
     try {
         const roles = await pool.query('SELECT id_rol, nombre_rol FROM rol ORDER BY id_rol ASC');
@@ -216,9 +209,7 @@ router.get('/permisos/matriz', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // 6. MÉTRICAS RELACIONALES GLOBALES (AdminDashboard.tsx)
-// ========================================================
 // Se extrajo del anidamiento y se protegió con authMiddleware conforme a la arquitectura SVDRAYF
 router.get('/dashboard-stats', authMiddleware, async (req, res) => {
     try {
@@ -242,9 +233,7 @@ router.get('/dashboard-stats', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // MAESTRO DE FLOTA: LEER TODAS LAS UNIDADES + JOIN SOCIO
-// ========================================================
 router.get('/buses', authMiddleware, async (req, res) => {
     try {
         const buses = await pool.query(
@@ -259,9 +248,7 @@ router.get('/buses', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // ASISTENTE DE DIALOG: BUSCAR SÓLO USUARIOS CON ROL SOCIO
-// ========================================================
 router.get('/socios-list', authMiddleware, async (req, res) => {
     try {
         // Filtra los usuarios cuyo id_rol es 3 (Socio Copropietario)
@@ -274,9 +261,7 @@ router.get('/socios-list', authMiddleware, async (req, res) => {
     }
 });
 
-// ========================================================
 // REGISTRAR AUTOBÚS CON VALIDACIÓN PERIMETRAL (CUS-03)
-// ========================================================
 router.post('/buses', authMiddleware, async (req, res) => {
     try {
         const { 
@@ -313,9 +298,7 @@ router.post('/buses', authMiddleware, async (req, res) => {
         return res.status(500).json({ status: 'ERROR', message: err.message });
     }
 });
-// ========================================================
 // MODIFICAR VEHÍCULO (EDICIÓN RESTRINGIDA A PARÁMETROS)
-// ========================================================
 router.put('/buses/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
