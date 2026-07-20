@@ -37,7 +37,7 @@ const logger = createLogger({
     transports: [
         new transports.Console(), // Transmisión viva a la terminal/Render
         
-        // 🟢 NUEVA ADICIÓN: Guarda los logs automáticamente en un archivo .txt plano
+        //  NUEVA ADICIÓN: Guarda los logs automáticamente en un archivo .txt plano
         new transports.File({ 
             filename: path.join(__dirname, '../svdrayf_monitoreo.txt'),
             level: 'info' // Captura 'info' y severidades más altas (error, warning, critical)

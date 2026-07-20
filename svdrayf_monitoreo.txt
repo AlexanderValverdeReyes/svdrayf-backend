@@ -1,0 +1,6 @@
+[2026-07-19 21:36:57.992] [INFO] [Módulo: TEST_UNITARIO] [Proc/UID: 999] ➔ Verificando traza estructurada
+[2026-07-19 21:36:58.003] [INFO] [Módulo: SEGURIDAD_AUTH] [Proc/UID: ANÓNIMO] ➔ Intento de login con payload: {"user":"cobrador1", "password":"********"}
+[2026-07-19 21:36:58.006] [INFO] [Módulo: GESTION_TURNOS] [Proc/UID: ID-COBRADOR-05] ➔ Operación [Aperturar Turno] EXITOSA. Unidad Bus Placa [B4F-789] enlazada de forma conforme en Neon.db.
+[2026-07-19 21:36:58.007] [INFO] [Módulo: LIQUIDACION_CAJA] [Proc/UID: ID-COBRADOR-05] ➔ Operación [Cerrar Turno] CONFORME. Estado congelado en base de datos. Arqueo total consolidado: S/. 345.50.
+[2026-07-19 21:36:58.008] [INFO] [Módulo: SEGURIDAD_AUTH] [Proc/UID: ID-COBRADOR-05] ➔ Operación [Autenticar Credenciales] CONFORME. Acceso concedido al ecosistema móvil SVDRAYF.
+[2026-07-19 21:36:58.010] [WARNING] [Módulo: SEGURIDAD_AUTH] [Proc/UID: ID-COBRADOR-05] ➔ Acceso Denegado: Operario con perfil de Cobrador intentó forzar una operación ilegal de login en canal Web.
